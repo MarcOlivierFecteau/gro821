@@ -1,0 +1,21 @@
+[project]
+name = "gro821"
+version = "0.1.0"
+description = "Repository for GRO821"
+readme = "README.md"
+authors = [
+    { name = "MarcOlivierFecteau", email = "marc-olivier.fecteau@usherbrooke.ca" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.2",
+]
+
+[project.scripts]
+gro821 = "gro821:main"
+prob1 = "gro821.problematique1.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
