@@ -5,8 +5,8 @@ import random
 from typing import Final
 
 import matplotlib.pyplot as plt
-from matplotlib import patches
 import numpy as np
+from matplotlib import patches
 from numpy.typing import NDArray
 
 
