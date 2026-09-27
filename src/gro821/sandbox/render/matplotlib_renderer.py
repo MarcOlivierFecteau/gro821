@@ -3,8 +3,15 @@ import numpy as np
 from matplotlib import patches
 from matplotlib.axes import Axes
 
-from ..geometry import Circle, Point
+from ..geometry import (
+    AABB,
+    OBB,
+    Circle,
+    Point,
+)
 from ..robot import RobotConfig
+from ..structures.kdtree import KdTreeNode
+from ..structures.quadtree import CompressedQuadtreeNode, PointQuadtreeNode, SpaceQuadtreeNode
 from ..world import World
 
 
@@ -23,10 +30,12 @@ def draw_world(world: World) -> Axes:
     return axes
 
 
-def draw_points(points: list[Point]) -> Axes:
+def draw_points(points: list[Point], zorder: int = 1) -> Axes:
     """Draw points on the current axes in red."""
     axes = plt.gca()
-    axes.scatter([point.x for point in points], [point.y for point in points], c="red")
+    axes.scatter(
+        [point.x for point in points], [point.y for point in points], s=5.0, c="red", zorder=zorder
+    )
     return axes
 
 
@@ -105,6 +114,114 @@ def draw_convex_hull(convex_hull: list[Point]) -> Axes:
             fill=False,
             edgecolor="blue",
             linewidth=1.5,
+        )
+    )
+    return axes
+
+
+def draw_quadtree(quadtree: SpaceQuadtreeNode | PointQuadtreeNode) -> Axes:
+    """Draw the leaf regions of ``quadtree`` on the current axes."""
+    axes = plt.gca()
+
+    if quadtree.is_leaf():
+        start, end = quadtree.bb.start, quadtree.bb.end
+        axes.add_patch(
+            patches.Rectangle(
+                (start.x, start.y),
+                end.x - start.x,
+                end.y - start.y,
+                fill=False,
+                edgecolor="gray",
+                linewidth=0.5,
+            )
+        )
+        return axes
+
+    for child in (quadtree.NW, quadtree.NE, quadtree.SW, quadtree.SE):
+        if child is not None:
+            draw_quadtree(child)
+    return axes
+
+
+def draw_kdtree(kdtree: KdTreeNode) -> Axes:
+    """Draw the leaf regions of ``kdtree`` on the current axes."""
+    axes = plt.gca()
+
+    if kdtree.is_leaf():
+        start, end = kdtree.bb.start, kdtree.bb.end
+        axes.add_patch(
+            patches.Rectangle(
+                (start.x, start.y),
+                end.x - start.x,
+                end.y - start.y,
+                fill=False,
+                edgecolor="gray",
+                linewidth=0.5,
+            )
+        )
+        return axes
+
+    if kdtree.lhs is not None:
+        draw_kdtree(kdtree.lhs)
+    if kdtree.rhs is not None:
+        draw_kdtree(kdtree.rhs)
+    return axes
+
+
+def draw_compressed_quadtree(quadtree: CompressedQuadtreeNode) -> Axes:
+    """Draw the represented regions of a compressed quadtree on the current axes."""
+    axes = plt.gca()
+
+    start, end = quadtree.bb.start, quadtree.bb.end
+    axes.add_patch(
+        patches.Rectangle(
+            (start.x, start.y),
+            end.x - start.x,
+            end.y - start.y,
+            fill=False,
+            edgecolor="gray",
+            linewidth=0.5,
+        )
+    )
+
+    if not quadtree.is_leaf():
+        for child in quadtree.children.values():
+            draw_compressed_quadtree(child)
+    return axes
+
+
+def draw_aabb(bb: AABB, color: tuple[float, float, float]) -> Axes:
+    """Draw the axis-aligned bounding box as a rectangle."""
+    axes = plt.gca()
+    start, end = bb.start, bb.end
+    axes.add_patch(
+        patches.Rectangle(
+            (start.x, start.y),
+            end.x - start.x,
+            end.y - start.y,
+            edgecolor=color,
+            facecolor=(*color, 0.2),
+            fill=True,
+            linewidth=0.5,
+            zorder=10,
+        )
+    )
+    return axes
+
+
+def draw_obb(bb: OBB, color: tuple[float, float, float]) -> Axes:
+    """Draw the oriented bounding box as a rotated polygon."""
+    axes = plt.gca()
+    vertices = [(point.x, point.y) for point in bb.corners()]
+    axes.add_patch(
+        patches.Polygon(
+            vertices,
+            closed=True,
+            edgecolor=color,
+            facecolor=(*color, 0.2),
+            fill=True,
+            linewidth=0.5,
+            zorder=10,
         )
     )
     return axes

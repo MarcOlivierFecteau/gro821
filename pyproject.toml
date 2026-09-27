@@ -15,7 +15,7 @@ dependencies = [
 [project.scripts]
 gro821 = "gro821:main"
 prob1 = "gro821.problematique1.main:main"
-sandbox = "gro821.book.main:main"
+sandbox = "gro821.sandbox.main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]

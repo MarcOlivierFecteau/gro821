@@ -157,10 +157,11 @@ def conf_is_valid(conf: RobotConfig, obstacles: NDArray[np.float64]) -> bool:
 def main():
     # random.seed(42)  # To validate the logic with the same inputs between runs
     obstacles = generate_obstacles(10, 20, 1, 3)
-    for i in range(3):
+    for i in range(1):
         plt.figure(i)
         draw_obstacles(obstacles)
-        robot_conf = generate_rand_conf()
+        robot_conf = RobotConfig(theta1=0.467774, theta2=-2.910501)
+        # robot_conf = generate_rand_conf()
         draw_robot_config(robot_conf)
         plt.show(block=False)
         print(f"{robot_conf!s} valid? {conf_is_valid(robot_conf, obstacles)}")
