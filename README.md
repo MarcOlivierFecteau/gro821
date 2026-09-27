@@ -11,5 +11,5 @@ uv sync
 To run the script for the first assignment:
 
 ```console
-uv run prob1
+uv run sandbox
 ```
