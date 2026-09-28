@@ -12,6 +12,7 @@ from gro821.sandbox.comparison import ComparisonConfig, TimeResults
 from gro821.sandbox.fmt import ANSI
 from gro821.sandbox.geometry import Point, make_aabb_from_circle
 from gro821.sandbox.render import matplotlib_renderer as renderer
+from gro821.sandbox.render.plots import plot_time_results
 from gro821.sandbox.robot import (
     RobotConfig,
     conf_is_valid_naive,
@@ -195,7 +196,7 @@ def compare_kdtree(
     num_points: int,
     other: ComparisonConfig,
     build_times: bool,
-) -> tuple[TimeResults, list[Point]]:
+) -> tuple[list[TimeResults], list[Point]]:
     if any(
         [
             sample_size <= 0,
@@ -222,6 +223,16 @@ def compare_kdtree(
         _ = fn(*args)
         end = perf_counter_ns()
         return end - start
+
+    def percentile(values: list[float], percent: float) -> float:
+        ordered = sorted(values)
+        index = (len(ordered) - 1) * percent / 100
+        lower = int(index)
+        upper = min(lower + 1, len(ordered) - 1)
+        if ordered[lower] == ordered[upper]:
+            return ordered[lower]
+        weight = index - lower
+        return ordered[lower] + (ordered[upper] - ordered[lower]) * weight
 
     points: list[Point] = []
     for _ in range(sample_size):
@@ -327,11 +338,15 @@ def compare_kdtree(
     avg_other_time /= sample_size
     avg_kdtree_time /= sample_size
     avg_factor /= sample_size
+    p99_other_time = percentile([result.first for result in results], 99)
+    p99_kdtree_time = percentile([result.second for result in results], 99)
+    p99_factor = p99_other_time / p99_kdtree_time
 
     faster = avg_factor >= 1
     if not faster:
         avg_factor = 1 / avg_factor
 
+    p99_other_build_time = p99_kdtree_build_time = p99_build_factor = 0.0
     if build_times:
         avg_other_build_time = avg_kdtree_build_time = avg_build_factor = 0.0
         for other_build_time, kdtree_build_time, build_factor in build_results:
@@ -341,11 +356,15 @@ def compare_kdtree(
         avg_other_build_time /= sample_size
         avg_kdtree_build_time /= sample_size
         avg_build_factor /= sample_size
+        p99_other_build_time = percentile([result.first for result in build_results], 99)
+        p99_kdtree_build_time = percentile([result.second for result in build_results], 99)
+        p99_build_factor = p99_other_build_time / p99_kdtree_build_time
 
         build_faster = avg_build_factor >= 1
         if not build_faster:
             avg_build_factor = 1 / avg_build_factor
 
+    print(f"{ANSI.DIM}{fmt.bold('=' * 30)}{ANSI.RESET}")
     if build_times:
         print(fmt.bold("Average Build Time"))
         print(
@@ -364,6 +383,13 @@ def compare_kdtree(
         print(
             f"Kd-Tree: {avg_kdtree_build_time:.0f} ns ({avg_build_factor:.3f}x {  # pyright: ignore[reportPossiblyUnboundVariable]
                 fmt.pprint_bool(build_faster, ('faster', 'slower'))  # pyright: ignore[reportPossiblyUnboundVariable]
+            })"
+        )
+        print(fmt.it("--- 99th Percentile ---"))
+        print(f"{other_str.split(': ')[0]}: {p99_other_build_time:.0f} ns")
+        print(
+            f"Kd-Tree: {p99_kdtree_build_time:.0f} ns ({p99_build_factor:.3f}x {  # pyright: ignore[reportPossiblyUnboundVariable]
+                fmt.pprint_bool(p99_build_factor >= 1, ('faster', 'slower'))
             })"
         )
         fmt.LF()
@@ -387,9 +413,24 @@ def compare_kdtree(
             fmt.pprint_bool(faster, ('faster', 'slower'))
         })"
     )
-    fmt.LF()
+    print(fmt.it("--- 99th Percentile ---"))
+    print(f"{other_str.split(': ')[0]}: {p99_other_time:.0f} ns")
+    print(
+        f"Kd-Tree: {p99_kdtree_time:.0f} ns ({p99_factor:.3f}x {
+            fmt.pprint_bool(p99_factor >= 1, ('faster', 'slower'))
+        })"
+    )
+    print(f"{ANSI.DIM}{fmt.bold('=' * 30)}{ANSI.RESET}\n")
 
-    return (TimeResults(avg_other_time, avg_kdtree_time, avg_factor), points)
+    results = [
+        TimeResults(avg_other_time, avg_kdtree_time, avg_factor),
+        TimeResults(p99_other_time, p99_kdtree_time, p99_factor),
+    ]
+    if build_times:
+        results.append(TimeResults(avg_other_build_time, avg_kdtree_build_time, avg_build_factor))  # pyright: ignore[reportPossiblyUnboundVariable]
+        results.append(TimeResults(p99_other_build_time, p99_kdtree_build_time, p99_build_factor))
+
+    return (results, points)
 
 
 def main() -> None:
@@ -415,14 +456,22 @@ def main() -> None:
     # _ = compare_quadtree_to_naive(world, 1000, 100, "OBB", "space", True)
 
     # fmt: off
-    print(fmt.bold("=== World similar to assignment ===\n"))
-    _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("naive"), True)
-    _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", False), True)
-    _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", True), True)
-    _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", False), True)
-    _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", True), True)
-    _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "aabb"), True)
-    _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "obb"), True), True
+    # print(fmt.bold("=== World similar to assignment ===\n"))
+    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("naive"), True)
+    # _ = plot_time_results(results[:2], "Kd-Tree VS Naive")
+    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", False), True)
+    # _ = plot_time_results(results, "Kd-Tree VS Space Quadtree (AABB)")
+
+    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", True), True)
+    # _ = plot_time_results(results, "Kd-Tree VS Space Quadtree (AABB, Compressed)")
+    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", False), True)
+    # _ = plot_time_results(results, "Kd-Tree VS Space Quadtree (OBB)")
+    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", True), True)
+    # _ = plot_time_results(results, "Kd-Tree VS Space Quadtree (OBB, Compressed)")
+    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "aabb"), True)
+    # _ = plot_time_results(results, "Kd-Tree VS Point Quadtree (AABB)")
+    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "obb"), True)
+    # _ = plot_time_results(results, "Kd-Tree VS Point Quadtree (OBB)")
 
     print(fmt.bold("=== 'Sparse' world ===\n"))
     _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("naive"), True)
@@ -454,6 +503,7 @@ def main() -> None:
 
     print(fmt.bold("Configuration is valid ?"))
     quadtree = qd.build_space_quadtree(points, quadtree_region, capacity=2)
+    # quadtree = qd.compress_quadtree(quadtree)
     conf_is_valid_aabb = not qd.space_quadtree_collides_aabb(quadtree, arm1_bb)
     conf_is_valid_aabb &= not qd.space_quadtree_collides_aabb(quadtree, arm2_bb)
     conf_is_valid_obb = not qd.space_quadtree_collides_obb(quadtree, arm1_obb)
@@ -482,9 +532,9 @@ def main() -> None:
 
     _ = renderer.draw_world(world)
     _ = renderer.draw_robot_config(robot_conf)
-    # _ = renderer.draw_quadtree(quadtree)
+    _ = renderer.draw_quadtree(quadtree)
     # _ = renderer.draw_compressed_quadtree(quadtree)
-    _ = renderer.draw_kdtree(kdtree)
+    # _ = renderer.draw_kdtree(kdtree)
     _ = renderer.draw_points(points, 100)
     # _ = renderer.draw_navigable_area(navigable_area)
     _ = renderer.draw_aabb(arm1_bb, (0.5, 0, 0.5))
