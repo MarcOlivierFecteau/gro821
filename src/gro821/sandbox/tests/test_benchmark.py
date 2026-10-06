@@ -1,8 +1,18 @@
 from __future__ import annotations
 
-from gro821.sandbox.benchmark import BenchmarkWorkload, benchmark_methods, generate_workloads
+import math
+
+from gro821.sandbox.benchmark import (
+    BenchmarkWorkload,
+    benchmark_methods,
+    collision_methods,
+    collision_workloads,
+    generate_workloads,
+)
 from gro821.sandbox.comparison import MethodSpec
 from gro821.sandbox.fmt import ANSI
+from gro821.sandbox.geometry import AABB, Point
+from gro821.sandbox.robot import RobotConfig
 
 
 def test_generate_workloads_creates_expected_indices() -> None:
@@ -62,10 +72,49 @@ def test_benchmark_methods_accepts_no_expected_value() -> None:
     assert results.samples[0].correct is None
 
 
+def test_collision_runner_matches_naive_result_for_indexed_methods() -> None:
+    robot = RobotConfig(Point(0.0, 0.0), 0.1, 1.0, 1.0, 0.0, 0.0)
+    region = AABB(Point(-1.0, -1.0), Point(3.0, 3.0))
+    workloads = collision_workloads(
+        [
+            ([Point(0.5, 0.0), Point(2.0, 2.0)], region, robot),
+            ([Point(2.0, 2.0), Point(-0.5, 2.0)], region, robot),
+        ]
+    )
+
+    results = benchmark_methods(collision_methods(bb_type="aabb", capacity=1), workloads)
+
+    assert {sample.method for sample in results.samples} == {
+        "naive",
+        "kd-tree",
+        "space-quadtree",
+        "point-quadtree",
+        "compressed-quadtree",
+    }
+    for sample in results.samples:
+        assert sample.correct is True
+
+
+def test_collision_runner_checks_obb_variants_against_naive() -> None:
+    robot = RobotConfig(Point(0.0, 0.0), 0.1, 1.0, 1.0, 0.2, -0.4)
+    region = AABB(Point(-1.0, -1.0), Point(3.0, 3.0))
+    workloads = collision_workloads(
+        [
+            ([Point(0.5 * math.cos(0.2), 0.5 * math.sin(0.2)), Point(2.5, 2.5)], region, robot)
+        ]
+    )
+
+    results = benchmark_methods(collision_methods(bb_type="obb", capacity=1), workloads)
+
+    assert all(sample.correct is True for sample in results.samples)
+
+
 def main():
     test_generate_workloads_creates_expected_indices()
     test_benchmark_methods_records_build_query_and_storage()
     test_benchmark_methods_accepts_no_expected_value()
+    test_collision_runner_matches_naive_result_for_indexed_methods()
+    test_collision_runner_checks_obb_variants_against_naive()
 
     print(f"Benchmark: {ANSI.BRIGHT_GREEN}All tests passed.{ANSI.RESET}")
 

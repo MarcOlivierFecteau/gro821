@@ -8,7 +8,12 @@ import matplotlib.pyplot as plt
 import gro821.sandbox.structures.quadtree as qd
 from gro821.sandbox import fmt
 from gro821.sandbox.algorithms import convex_hull as CH
-from gro821.sandbox.comparison import ComparisonConfig, TimeResults
+from gro821.sandbox.benchmark import (
+    benchmark_methods,
+    collision_methods,
+    generate_collision_workloads,
+)
+from gro821.sandbox.comparison import ComparisonConfig, ComparisonResults, TimeResults
 from gro821.sandbox.fmt import ANSI
 from gro821.sandbox.geometry import Point, make_aabb_from_circle
 from gro821.sandbox.render import matplotlib_renderer as renderer
@@ -23,6 +28,28 @@ from gro821.sandbox.robot import (
 )
 from gro821.sandbox.structures import kdtree as kd
 from gro821.sandbox.world import World
+
+
+def run_collision_experiment(
+    world: World,
+    sample_count: int,
+    clusters: int,
+    points_per_cluster: int,
+    *,
+    bb_type: str = "aabb",
+    capacity: int = 1,
+) -> ComparisonResults:
+    """Run all collision methods over one shared set of generated workloads."""
+    workloads = generate_collision_workloads(
+        world,
+        sample_count,
+        clusters,
+        points_per_cluster,
+    )
+    return benchmark_methods(
+        collision_methods(bb_type=bb_type, capacity=capacity),
+        workloads,
+    )
 
 
 def compare_convex_hull(

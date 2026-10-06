@@ -1,13 +1,190 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter_ns
 
 from gro821.sandbox.comparison import BenchmarkSample, ComparisonResults, MethodSpec
+from gro821.sandbox.geometry import AABB, OBB, Point, make_aabb_from_circle
 from gro821.sandbox.memory import retained_size
+from gro821.sandbox.robot import (
+    RobotConfig,
+    conf_is_valid_naive,
+    get_link_aabb,
+    get_link_obb,
+    get_navigable_area,
+)
+from gro821.sandbox.structures import kdtree as kd
+from gro821.sandbox.structures import quadtree as qd
+from gro821.sandbox.world import World
 
 Scalar = str | int | float | bool | None
+
+
+def _collision_boxes(robot: RobotConfig, bb_type: str) -> tuple[AABB | OBB, AABB | OBB]:
+    if bb_type == "aabb":
+        return get_link_aabb(robot, 0), get_link_aabb(robot, 1)
+    return get_link_obb(robot, 0), get_link_obb(robot, 1)
+
+
+def _indexed_query(
+    query: Callable[[object, object], bool],
+    structure: object,
+    robot: RobotConfig,
+    bb_type: str,
+) -> bool:
+    first, second = _collision_boxes(robot, bb_type)
+    return not (query(structure, first) or query(structure, second))
+
+
+def collision_methods(
+    *,
+    bb_type: str = "aabb",
+    capacity: int = 1,
+    include_naive: bool = True,
+    include_kdtree: bool = True,
+    include_quadtrees: bool = True,
+) -> list[MethodSpec]:
+    """Return named collision methods sharing the same point/region workload."""
+    bb_type = bb_type.lower()
+    if bb_type not in {"aabb", "obb"}:
+        raise ValueError("`bb_type` must be either 'aabb' or 'obb'.")
+    if capacity <= 0:
+        raise ValueError("`capacity` must be positive.")
+
+    methods: list[MethodSpec] = []
+    if include_naive:
+        methods.append(
+            MethodSpec(
+                name="naive",
+                build=lambda points, _region: points,
+                query=lambda points, robot: conf_is_valid_naive(robot, points),
+                metadata={"bb_type": bb_type},
+            )
+        )
+
+    def add_indexed_method(
+        name: str,
+        build: Callable[[list[Point], AABB, int], object],
+        query: Callable[[object, AABB | OBB], bool],
+        post_build: Callable[[object], object] | None = None,
+    ) -> None:
+        methods.append(
+            MethodSpec(
+                name=name,
+                build=lambda points, region, build=build: build(points, region, capacity),
+                query=lambda structure, robot, query=query: _indexed_query(
+                    query, structure, robot, bb_type
+                ),
+                post_build=post_build,
+                metadata={"bb_type": bb_type, "capacity": capacity},
+            )
+        )
+
+    if include_kdtree:
+        add_indexed_method("kd-tree", kd.build_kdtree, kd.kdtree_collides_bb)  # pyright: ignore[reportArgumentType]
+    if include_quadtrees:
+        add_indexed_method(
+            "space-quadtree",
+            qd.build_space_quadtree,
+            qd.space_quadtree_collides_aabb
+            if bb_type == "aabb"
+            else qd.space_quadtree_collides_obb,  # pyright: ignore[reportArgumentType]
+        )
+        add_indexed_method(
+            "point-quadtree",
+            qd.build_point_quadtree,
+            qd.point_quadtree_collides_aabb
+            if bb_type == "aabb"
+            else qd.point_quadtree_collides_obb,  # pyright: ignore[reportArgumentType]
+        )
+        add_indexed_method(
+            "compressed-quadtree",
+            qd.build_space_quadtree,
+            qd.compressed_quadtree_collides_aabb
+            if bb_type == "aabb"
+            else qd.compressed_quadtree_collides_obb,  # pyright: ignore[reportArgumentType]
+            post_build=qd.compress_quadtree,  # pyright: ignore[reportArgumentType]
+        )
+    return methods
+
+
+def collision_workloads(
+    points_and_robots: Iterable[tuple[list[Point], AABB, RobotConfig]],
+) -> list[BenchmarkWorkload]:
+    """Adapt generated points, search regions, and robot configurations to workloads."""
+    workloads: list[BenchmarkWorkload] = []
+    for sample_index, (points, region, robot) in enumerate(points_and_robots):
+        workloads.append(
+            BenchmarkWorkload(
+                sample_index=sample_index,
+                build_args=(points, region),
+                query_args=(robot,),
+                expected=conf_is_valid_naive(robot, points),
+                metadata={"point_count": len(points)},
+            )
+        )
+    return workloads
+
+
+def generate_collision_workloads(
+    world: World,
+    sample_count: int,
+    clusters: int,
+    points_per_cluster: int,
+) -> list[BenchmarkWorkload]:
+    """Generate identical obstacle/configuration workloads for all methods."""
+    generated: list[tuple[list[Point], AABB, RobotConfig]] = []
+    for _ in range(sample_count):
+        initial_robot = RobotConfig(
+            Point(world.width / 2, world.height / 2),
+            min(world.width, world.height) / 15,
+            min(world.width, world.height) / 4,
+            min(world.width, world.height) / 6,
+            0.0,
+            0.0,
+        )
+        robot = RobotConfig(
+            initial_robot.base,
+            initial_robot.arm_width,
+            initial_robot.arm1_length,
+            initial_robot.arm2_length,
+            world.rng.uniform(-math.pi, math.pi),
+            world.rng.uniform(-math.pi, math.pi),
+        )
+        points = world.generate_obstacles(
+            clusters,
+            points_per_cluster,
+            1,
+            max(world.width, world.height) / 2,
+            initial_robot,
+        )
+        region = make_aabb_from_circle(get_navigable_area(robot)[1])
+        generated.append((points, region, robot))
+    return collision_workloads(generated)
+
+
+def run_collision_benchmark(
+    points_and_robots: Iterable[tuple[list[Point], AABB, RobotConfig]],
+    *,
+    bb_type: str = "aabb",
+    capacity: int = 1,
+    include_naive: bool = True,
+    include_kdtree: bool = True,
+    include_quadtrees: bool = True,
+) -> ComparisonResults:
+    """Run all selected collision methods over identical generated workloads."""
+    return benchmark_methods(
+        collision_methods(
+            bb_type=bb_type,
+            capacity=capacity,
+            include_naive=include_naive,
+            include_kdtree=include_kdtree,
+            include_quadtrees=include_quadtrees,
+        ),
+        collision_workloads(points_and_robots),
+    )
 
 
 @dataclass(frozen=True)
@@ -145,8 +322,12 @@ def compare_methods(
 __all__ = [
     "BenchmarkWorkload",
     "benchmark_methods",
+    "collision_methods",
+    "collision_workloads",
     "compare_methods",
+    "generate_collision_workloads",
     "generate_workloads",
     "run_benchmark",
+    "run_collision_benchmark",
     "run_method",
 ]
