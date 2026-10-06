@@ -50,6 +50,7 @@ class MethodSpec:
     query: QueryFunction
     storage: StorageFunction | None = None
     post_build: TransformFunction | None = None
+    measure_build: bool = True
     config: ComparisonConfig | None = None
     metadata: Mapping[str, Scalar] = field(default_factory=dict)
 

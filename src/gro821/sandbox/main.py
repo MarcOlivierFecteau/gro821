@@ -49,6 +49,15 @@ def run_collision_experiment(
     return benchmark_methods(
         collision_methods(bb_type=bb_type, capacity=capacity),
         workloads,
+        metadata={
+            "world_width": world.width,
+            "world_height": world.height,
+            "cluster_count": clusters,
+            "points_per_cluster": points_per_cluster,
+            "sample_count": sample_count,
+            "capacity": capacity,
+            "bb_type": bb_type.lower(),
+        },
     )
 
 
@@ -486,8 +495,8 @@ def main() -> None:
     # print(fmt.bold("=== World similar to assignment ===\n"))
     # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("naive"), True)
     # _ = plot_time_results(results[:2], "Kd-Tree VS Naive")
-    # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", False), True)
-    # _ = plot_time_results(results, "Kd-Tree VS Space Quadtree (AABB)")
+    results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", False), True)
+    _ = plot_time_results(results, "Kd-Tree VS Space Quadtree (AABB)")
 
     # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", True), True)
     # _ = plot_time_results(results, "Kd-Tree VS Space Quadtree (AABB, Compressed)")
@@ -500,14 +509,14 @@ def main() -> None:
     # results, _ = compare_kdtree(world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "obb"), True)
     # _ = plot_time_results(results, "Kd-Tree VS Point Quadtree (OBB)")
 
-    print(fmt.bold("=== 'Sparse' world ===\n"))
-    _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("naive"), True)
-    _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", False), True)
-    _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", True), True)
-    _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", False), True)
-    _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", True), True)
-    _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "aabb"), True)
-    _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "obb"), True), True
+    # print(fmt.bold("=== 'Sparse' world ===\n"))
+    # _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("naive"), True)
+    # _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", False), True)
+    # _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "aabb", True), True)
+    # _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", False), True)
+    # _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "space", "obb", True), True)
+    # _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "aabb"), True)
+    # _ = compare_kdtree(big_world, 1000, 10, 10, ComparisonConfig("quadtree", "point", "obb"), True), True
 
     # print(fmt.bold("=== World similar to LiDAR measures ===\n"))
     # _ = compare_kdtree(big_world, 1000, 30, 30, ComparisonConfig("naive"), True)

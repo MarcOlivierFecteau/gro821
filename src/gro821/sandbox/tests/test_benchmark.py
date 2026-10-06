@@ -47,7 +47,11 @@ def test_benchmark_methods_records_build_query_and_storage() -> None:
         metadata={"tag": "demo"},
     )
 
-    results = benchmark_methods([method], [workload])
+    results = benchmark_methods(
+        [method],
+        [workload],
+        metadata={"world_width": 3.0, "sample_count": 1},
+    )
     sample = results.samples[0]
 
     assert sample.method == "adder"
@@ -57,6 +61,7 @@ def test_benchmark_methods_records_build_query_and_storage() -> None:
     assert sample.storage_bytes == 17
     assert sample.correct is True
     assert sample.metadata["tag"] == "demo"
+    assert results.metadata == {"world_width": 3.0, "sample_count": 1}
 
 
 def test_benchmark_methods_accepts_no_expected_value() -> None:
@@ -99,9 +104,7 @@ def test_collision_runner_checks_obb_variants_against_naive() -> None:
     robot = RobotConfig(Point(0.0, 0.0), 0.1, 1.0, 1.0, 0.2, -0.4)
     region = AABB(Point(-1.0, -1.0), Point(3.0, 3.0))
     workloads = collision_workloads(
-        [
-            ([Point(0.5 * math.cos(0.2), 0.5 * math.sin(0.2)), Point(2.5, 2.5)], region, robot)
-        ]
+        [([Point(0.5 * math.cos(0.2), 0.5 * math.sin(0.2)), Point(2.5, 2.5)], region, robot)]
     )
 
     results = benchmark_methods(collision_methods(bb_type="obb", capacity=1), workloads)

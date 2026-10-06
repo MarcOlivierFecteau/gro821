@@ -60,6 +60,7 @@ def collision_methods(
                 name="naive",
                 build=lambda points, _region: points,
                 query=lambda points, robot: conf_is_valid_naive(robot, points),
+                measure_build=False,
                 metadata={"bb_type": bb_type},
             )
         )
@@ -173,6 +174,7 @@ def run_collision_benchmark(
     include_naive: bool = True,
     include_kdtree: bool = True,
     include_quadtrees: bool = True,
+    metadata: Mapping[str, Scalar] | None = None,
 ) -> ComparisonResults:
     """Run all selected collision methods over identical generated workloads."""
     return benchmark_methods(
@@ -184,6 +186,7 @@ def run_collision_benchmark(
             include_quadtrees=include_quadtrees,
         ),
         collision_workloads(points_and_robots),
+        metadata=metadata,
     )
 
 
@@ -244,7 +247,7 @@ def run_method(
     built = method.build(*workload.build_args)
     if method.post_build is not None:
         built = method.post_build(built)
-    build_time_ns = perf_counter_ns() - build_start
+    build_time_ns = perf_counter_ns() - build_start if method.measure_build else None
 
     query_start = perf_counter_ns()
     query_result = (
@@ -269,7 +272,7 @@ def run_method(
     return BenchmarkSample(
         method=method.name,
         sample_index=workload.sample_index,
-        build_time_ns=float(build_time_ns),
+        build_time_ns=float(build_time_ns) if build_time_ns is not None else None,
         query_time_ns=float(query_time_ns),
         storage_bytes=int(storage_bytes),
         correct=correct,
@@ -282,9 +285,10 @@ def benchmark_methods(
     workloads: Iterable[BenchmarkWorkload],
     *,
     validator: Callable[[MethodSpec, object, object], bool] | None = None,
+    metadata: Mapping[str, Scalar] | None = None,
 ) -> ComparisonResults:
     """Run all methods across all workloads and return the raw comparison results."""
-    results = ComparisonResults()
+    results = ComparisonResults(metadata=metadata or {})
     for workload in workloads:
         for method in methods:
             if validator is not None:
@@ -304,9 +308,10 @@ def run_benchmark(
     workloads: Iterable[BenchmarkWorkload],
     *,
     validator: Callable[[MethodSpec, object, object], bool] | None = None,
+    metadata: Mapping[str, Scalar] | None = None,
 ) -> ComparisonResults:
     """Convenience alias matching the benchmark-runner terminology used in the assignment."""
-    return benchmark_methods(methods, workloads, validator=validator)
+    return benchmark_methods(methods, workloads, validator=validator, metadata=metadata)
 
 
 def compare_methods(
@@ -314,9 +319,10 @@ def compare_methods(
     workloads: Iterable[BenchmarkWorkload],
     *,
     validator: Callable[[MethodSpec, object, object], bool] | None = None,
+    metadata: Mapping[str, Scalar] | None = None,
 ) -> ComparisonResults:
     """Alias for the public comparison entry point."""
-    return benchmark_methods(methods, workloads, validator=validator)
+    return benchmark_methods(methods, workloads, validator=validator, metadata=metadata)
 
 
 __all__ = [
