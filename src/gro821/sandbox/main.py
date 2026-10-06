@@ -18,7 +18,7 @@ from gro821.sandbox.comparison import ComparisonResults, TimeResults
 from gro821.sandbox.fmt import ANSI
 from gro821.sandbox.geometry import Point, make_aabb_from_circle
 from gro821.sandbox.render import matplotlib_renderer as renderer
-from gro821.sandbox.render.plots import plot_metric_summaries
+from gro821.sandbox.render.plots import plot_benchmark_dashboard
 from gro821.sandbox.robot import (
     RobotConfig,
     conf_is_valid_naive,
@@ -284,8 +284,11 @@ def main() -> None:
             query_mean = f"{query.mean:.0f} ns" if query is not None else "n/a"
             storage_mean = f"{storage.mean:.0f} B" if storage is not None else "n/a"
             print(f"{summary.method}: query = {query_mean}, storage = {storage_mean}")
-        plot_metric_summaries(results, metric="query_time_ns", title=f"Query - {name}")
-        plot_metric_summaries(results, metric="storage_bytes", title=f"Storage - {name}")
+        plot_benchmark_dashboard(
+            results,
+            error_bars=True,
+            title=f"Benchmark - {name}",
+        )
     plt.show(block=True)
 
 

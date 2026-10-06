@@ -5,8 +5,35 @@ from collections.abc import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 from gro821.sandbox.comparison import ComparisonResults, TimeResults
+
+_METRICS = ("build_time_ns", "query_time_ns", "storage_bytes")
+_STATISTICS = ("count", "mean", "median", "p99", "standard_deviation")
+
+
+def _summary_values(
+    results: ComparisonResults,
+    metric: str,
+    statistic: str,
+) -> tuple[list[str], list[float], list[float]]:
+    if metric not in _METRICS:
+        raise ValueError("Unsupported benchmark metric.")
+    if statistic not in _STATISTICS:
+        raise ValueError("Unsupported summary statistic.")
+
+    labels: list[str] = []
+    values: list[float] = []
+    errors: list[float] = []
+    for summary in results.summaries():
+        metric_summary = getattr(summary, metric)
+        labels.append(summary.method)
+        values.append(float(getattr(metric_summary, statistic)) if metric_summary else 0.0)
+        errors.append(
+            float(metric_summary.standard_deviation) if metric_summary is not None else 0.0
+        )
+    return labels, values, errors
 
 
 def plot_metric_summaries(
@@ -15,25 +42,24 @@ def plot_metric_summaries(
     metric: str = "query_time_ns",
     statistic: str = "mean",
     title: str | None = None,
+    error_bars: bool = False,
 ) -> Axes:
     """Plot one summary statistic for every named benchmark method."""
-    if metric not in {"build_time_ns", "query_time_ns", "storage_bytes"}:
-        raise ValueError("Unsupported benchmark metric.")
-    if statistic not in {"count", "mean", "median", "p99", "standard_deviation"}:
-        raise ValueError("Unsupported summary statistic.")
-
-    summaries = results.summaries()
-    labels = [summary.method for summary in summaries]
-    values = []
-    for summary in summaries:
-        metric_summary = getattr(summary, metric)
-        values.append(float(getattr(metric_summary, statistic)) if metric_summary else 0.0)
+    labels, values, errors = _summary_values(results, metric, statistic)
 
     figure = plt.figure(title or f"{statistic} {metric}")
     figure.clear()
     axes = figure.add_subplot(111)
     positions = np.arange(len(labels))
-    axes.bar(positions, values, width=0.6)
+    colors = plt.get_cmap("tab10")(np.arange(len(labels)) % 10)
+    axes.bar(
+        positions,
+        values,
+        width=0.6,
+        color=colors,
+        yerr=errors if error_bars else None,
+        capsize=4 if error_bars else 0,
+    )
     axes.set_title(title or f"{statistic.title()} {metric.replace('_', ' ')}")
     axes.set_ylabel(metric.replace("_", " ").title())
     axes.set_xticks(positions, labels, rotation=25, ha="right")
@@ -41,6 +67,37 @@ def plot_metric_summaries(
         axes.set_yscale("log")
     figure.tight_layout()
     return axes
+
+
+def plot_benchmark_dashboard(
+    results: ComparisonResults,
+    *,
+    statistic: str = "mean",
+    error_bars: bool = False,
+    title: str = "Benchmark comparison",
+) -> Figure:
+    """Return one figure containing build, query, and storage metric plots."""
+    figure, axes = plt.subplots(1, 3, num=title, clear=True, figsize=(15, 5))
+    for axes_item, metric in zip(axes, _METRICS):
+        labels, values, errors = _summary_values(results, metric, statistic)
+        positions = np.arange(len(labels))
+        colors = plt.get_cmap("tab10")(np.arange(len(labels)) % 10)
+        axes_item.bar(
+            positions,
+            values,
+            width=0.6,
+            color=colors,
+            yerr=errors if error_bars else None,
+            capsize=4 if error_bars else 0,
+        )
+        axes_item.set_title(metric.replace("_", " ").title())
+        axes_item.set_ylabel("Bytes" if metric == "storage_bytes" else "Time (ns)")
+        axes_item.set_xticks(positions, labels, rotation=25, ha="right")
+        if any(value > 0 for value in values):
+            axes_item.set_yscale("log")
+    figure.suptitle(title)
+    figure.tight_layout()
+    return figure
 
 
 def plot_time_results(results: Sequence[TimeResults], title: str) -> Axes:
