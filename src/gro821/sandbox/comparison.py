@@ -217,3 +217,14 @@ def write_summary_csv(results: ComparisonResults, destination: str | Path) -> No
                 {f"experiment_{key}": results.metadata[key] for key in sorted(results.metadata)}
             )
             writer.writerow(row)
+
+
+def export_csv(results: ComparisonResults, directory: str | Path, name: str) -> tuple[Path, Path]:
+    """Write raw samples and summaries using a shared experiment name."""
+    output_directory = Path(directory)
+    output_directory.mkdir(parents=True, exist_ok=True)
+    samples_path = output_directory / f"{name}_samples.csv"
+    summary_path = output_directory / f"{name}_summary.csv"
+    write_samples_csv(results, samples_path)
+    write_summary_csv(results, summary_path)
+    return samples_path, summary_path

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from dataclasses import dataclass
+from pathlib import Path
 from random import Random
 from time import perf_counter_ns
 
@@ -14,7 +15,7 @@ from gro821.sandbox.benchmark import (
     collision_methods,
     generate_collision_workloads,
 )
-from gro821.sandbox.comparison import ComparisonResults, TimeResults
+from gro821.sandbox.comparison import ComparisonResults, TimeResults, export_csv
 from gro821.sandbox.fmt import ANSI
 from gro821.sandbox.geometry import Point, make_aabb_from_circle
 from gro821.sandbox.render import matplotlib_renderer as renderer
@@ -77,9 +78,10 @@ class CollisionExperiment:
     bb_type: str = "aabb"
     capacity: int = 1
     seed: int = 0
+    output_directory: Path | None = None
 
     def run(self) -> ComparisonResults:
-        return run_collision_experiment(
+        results = run_collision_experiment(
             World(self.world_width, self.world_height, rng=Random(self.seed)),
             self.sample_count,
             self.clusters,
@@ -88,6 +90,9 @@ class CollisionExperiment:
             capacity=self.capacity,
             seed=self.seed,
         )
+        if self.output_directory is not None:
+            export_csv(results, self.output_directory, self.name)
+        return results
 
 
 def run_configured_experiments(
@@ -273,6 +278,7 @@ def main() -> None:
             bb_type="aabb",
             capacity=1,
             seed=0,
+            output_directory=Path("results"),
         ),
     )
     results_by_name = run_configured_experiments(experiments)
