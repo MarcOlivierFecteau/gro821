@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +12,14 @@ from gro821.sandbox.comparison import ComparisonResults, TimeResults
 
 _METRICS = ("build_time_ns", "query_time_ns", "storage_bytes")
 _STATISTICS = ("count", "mean", "median", "p99", "standard_deviation")
+
+
+def save_figure_png(figure: Figure, destination: str | Path) -> Path:
+    """Save a matplotlib figure as a tightly-cropped PNG and return its path."""
+    output_path = Path(destination)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, format="png", bbox_inches="tight")
+    return output_path
 
 
 def _summary_values(

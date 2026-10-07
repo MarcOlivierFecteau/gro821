@@ -7,7 +7,6 @@ from random import Random
 
 import matplotlib.pyplot as plt
 
-import gro821.sandbox.structures.quadtree as qd
 from gro821.sandbox import fmt
 from gro821.sandbox.benchmark import (
     benchmark_methods,
@@ -15,7 +14,8 @@ from gro821.sandbox.benchmark import (
     generate_collision_workloads,
 )
 from gro821.sandbox.comparison import ComparisonResults, export_csv
-from gro821.sandbox.render.plots import plot_benchmark_dashboard
+from gro821.sandbox.fmt import ANSI
+from gro821.sandbox.render.plots import plot_benchmark_dashboard, save_figure_png
 from gro821.sandbox.world import World
 
 
@@ -115,7 +115,7 @@ def main() -> None:
             seed=_seed,
         ),
         CollisionExperiment(
-            name="small-aabb",
+            name="assignment-aabb",
             world_width=3,
             world_height=3,
             sample_count=1000,
@@ -125,22 +125,57 @@ def main() -> None:
             capacity=1,
             seed=_seed,
         ),
+        CollisionExperiment(
+            name="assignment-obb",
+            world_width=3,
+            world_height=3,
+            sample_count=1000,
+            clusters=10,
+            points_per_cluster=10,
+            bb_type="obb",
+            capacity=1,
+            seed=_seed,
+        ),
+        CollisionExperiment(
+            name="real-aabb",
+            world_width=5,
+            world_height=5,
+            sample_count=1000,
+            clusters=30,
+            points_per_cluster=30,
+            bb_type="aabb",
+            capacity=1,
+            seed=_seed,
+        ),
+        CollisionExperiment(
+            name="real-obb",
+            world_width=5,
+            world_height=5,
+            sample_count=1000,
+            clusters=30,
+            points_per_cluster=30,
+            bb_type="obb",
+            capacity=1,
+            seed=_seed,
+        ),
     )
     results_by_name = run_configured_experiments(experiments)
     for name, results in results_by_name.items():
-        export_csv(results, Path("results"), name)
-        print(fmt.bold(f"=== {name} ==="))
+        # export_csv(results, Path("results"), name)
+        print(f"{ANSI.DIM}=== {name} ==={ANSI.RESET}\n")
         for summary in results.summaries():
             query = summary.query_time_ns
             storage = summary.storage_bytes
             query_mean = f"{query.mean:.0f} ns" if query is not None else "n/a"
             storage_mean = f"{storage.mean:.0f} B" if storage is not None else "n/a"
             print(f"{summary.method}: query = {query_mean}, storage = {storage_mean}")
-        plot_benchmark_dashboard(
+        dashboard = plot_benchmark_dashboard(
             results,
             error_bars=True,
             title=f"Benchmark - {name}",
         )
+        save_figure_png(dashboard, Path("results") / f"{name}_dashboard.png")
+        fmt.LF()
     plt.show(block=True)
 
 
