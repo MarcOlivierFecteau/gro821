@@ -10,7 +10,10 @@ from gro821.sandbox.structures.quadtree import (
     build_space_quadtree,
     compress_quadtree,
     compressed_quadtree_collides_aabb,
+    compressed_quadtree_collides_hybrid,
     compressed_quadtree_collides_obb,
+    point_quadtree_collides_hybrid,
+    space_quadtree_collides_hybrid,
 )
 from gro821.sandbox.world import World
 
@@ -448,6 +451,30 @@ class TestBuildPointQuadtree:
     #     collected = collect_points(node)
     #     # Only the split point remains (because p != split_point excludes all duplicates)
     #     assert len(collected) == 1  # Known limitation of the current implementation
+
+
+class TestHybridCollision:
+    def test_all_tree_variants_recheck_aabb_hits_with_obb(self):
+        region = AABB(Point(0, 0), Point(100, 100))
+        obb = OBB(Point(50, 50), Point(10, 30), math.pi / 4)
+
+        space_tree = build_space_quadtree([Point(70, 70)], region, capacity=1)
+        point_tree = build_point_quadtree([Point(70, 70)], region, capacity=1)
+        compressed_tree = compress_quadtree(space_tree)
+
+        assert not space_quadtree_collides_hybrid(space_tree, obb)
+        assert not point_quadtree_collides_hybrid(point_tree, obb)
+        assert not compressed_quadtree_collides_hybrid(compressed_tree, obb)
+
+        assert space_quadtree_collides_hybrid(
+            build_space_quadtree([Point(50, 50)], region, capacity=1), obb
+        )
+        assert point_quadtree_collides_hybrid(
+            build_point_quadtree([Point(50, 50)], region, capacity=1), obb
+        )
+        assert compressed_quadtree_collides_hybrid(
+            compress_quadtree(build_space_quadtree([Point(50, 50)], region, capacity=1)), obb
+        )
 
 
 def main():

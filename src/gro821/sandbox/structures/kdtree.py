@@ -76,3 +76,18 @@ def kdtree_collides_bb(node: KdTreeNode, bb: AABB | OBB) -> bool:
         return False
 
     return kdtree_collides_bb(node.lhs, bb) or kdtree_collides_bb(node.rhs, bb)  # pyright: ignore[reportArgumentType]
+
+
+def kdtree_collides_hybrid(node: KdTreeNode, obb: OBB) -> bool:
+    """Use the OBB's enclosing AABB for pruning and the OBB for point hits."""
+    return _kdtree_collides_hybrid(node, obb, obb.enclosing_aabb())
+
+
+def _kdtree_collides_hybrid(node: KdTreeNode, obb: OBB, broad_phase: AABB) -> bool:
+    if not aabb_intersects(node.bb, broad_phase):
+        return False
+
+    if node.is_leaf():
+        return any(obb.contains(point) for point in node.points or [])
+
+    return _kdtree_collides_hybrid(node.lhs, obb, broad_phase) or _kdtree_collides_hybrid(node.rhs, obb, broad_phase)  # pyright: ignore[reportArgumentType]

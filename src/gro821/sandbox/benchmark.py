@@ -48,8 +48,8 @@ def collision_methods(
 ) -> list[MethodSpec]:
     """Return named collision methods sharing the same point/region workload."""
     bb_type = bb_type.lower()
-    if bb_type not in {"aabb", "obb"}:
-        raise ValueError("`bb_type` must be either 'aabb' or 'obb'.")
+    if bb_type not in {"aabb", "obb", "hybrid"}:
+        raise ValueError("`bb_type` must be either 'aabb', 'obb', or 'hybrid'.")
     if capacity <= 0:
         raise ValueError("`capacity` must be positive.")
 
@@ -84,13 +84,19 @@ def collision_methods(
         )
 
     if include_kdtree:
-        add_indexed_method("kd-tree", kd.build_kdtree, kd.kdtree_collides_bb)  # pyright: ignore[reportArgumentType]
+        add_indexed_method(
+            "kd-tree",
+            kd.build_kdtree,
+            kd.kdtree_collides_bb if bb_type != "hybrid" else kd.kdtree_collides_hybrid,  # pyright: ignore[reportArgumentType]
+        )  # pyright: ignore[reportArgumentType]
     if include_quadtrees:
         add_indexed_method(
             "space-quadtree",
             qd.build_space_quadtree,
             qd.space_quadtree_collides_aabb
             if bb_type == "aabb"
+            else qd.space_quadtree_collides_hybrid
+            if bb_type == "hybrid"
             else qd.space_quadtree_collides_obb,  # pyright: ignore[reportArgumentType]
         )
         add_indexed_method(
@@ -98,6 +104,8 @@ def collision_methods(
             qd.build_point_quadtree,
             qd.point_quadtree_collides_aabb
             if bb_type == "aabb"
+            else qd.point_quadtree_collides_hybrid
+            if bb_type == "hybrid"
             else qd.point_quadtree_collides_obb,  # pyright: ignore[reportArgumentType]
         )
         add_indexed_method(
@@ -105,6 +113,8 @@ def collision_methods(
             qd.build_space_quadtree,
             qd.compressed_quadtree_collides_aabb
             if bb_type == "aabb"
+            else qd.compressed_quadtree_collides_hybrid
+            if bb_type == "hybrid"
             else qd.compressed_quadtree_collides_obb,  # pyright: ignore[reportArgumentType]
             post_build=qd.compress_quadtree,  # pyright: ignore[reportArgumentType]
         )

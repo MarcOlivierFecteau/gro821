@@ -217,6 +217,26 @@ def space_quadtree_collides_obb(quadtree: SpaceQuadtreeNode, obb: OBB) -> bool:
     )
 
 
+def space_quadtree_collides_hybrid(quadtree: SpaceQuadtreeNode, obb: OBB) -> bool:
+    """Use the OBB's enclosing AABB for pruning and the OBB for point hits."""
+    return _space_quadtree_collides_hybrid(quadtree, obb, obb.enclosing_aabb())
+
+
+def _space_quadtree_collides_hybrid(
+    quadtree: SpaceQuadtreeNode, obb: OBB, broad_phase: AABB
+) -> bool:
+    if not aabb_intersects(quadtree.bb, broad_phase):
+        return False
+
+    if quadtree.is_leaf():
+        return any(obb.contains(point) for point in quadtree.points or [])
+
+    return any(
+        child is not None and _space_quadtree_collides_hybrid(child, obb, broad_phase)
+        for child in [quadtree.NW, quadtree.NE, quadtree.SW, quadtree.SE]
+    )
+
+
 def point_quadtree_collides_aabb(node: PointQuadtreeNode, aabb: AABB) -> bool:
     if not aabb_intersects(node.bb, aabb):
         return False
@@ -254,6 +274,29 @@ def point_quadtree_collides_obb(node: PointQuadtreeNode, obb: OBB) -> bool:
     )
 
 
+def point_quadtree_collides_hybrid(node: PointQuadtreeNode, obb: OBB) -> bool:
+    """Use the OBB's enclosing AABB for pruning and the OBB for point hits."""
+    return _point_quadtree_collides_hybrid(node, obb, obb.enclosing_aabb())
+
+
+def _point_quadtree_collides_hybrid(
+    node: PointQuadtreeNode, obb: OBB, broad_phase: AABB
+) -> bool:
+    if not aabb_intersects(node.bb, broad_phase):
+        return False
+
+    if node.is_leaf():
+        return any(obb.contains(point) for point in node.points or [])
+
+    if obb.contains(node.split_point):  # pyright: ignore[reportArgumentType]
+        return True
+
+    return any(
+        child is not None and _point_quadtree_collides_hybrid(child, obb, broad_phase)
+        for child in [node.NW, node.NE, node.SW, node.SE]
+    )
+
+
 def compressed_quadtree_collides_aabb(node: CompressedQuadtreeNode, aabb: AABB) -> bool:
     if not aabb_intersects(node.bb, aabb):
         return False
@@ -286,3 +329,23 @@ def compressed_quadtree_collides_obb(node: CompressedQuadtreeNode, obb: OBB) -> 
             return True
 
     return False
+
+
+def compressed_quadtree_collides_hybrid(node: CompressedQuadtreeNode, obb: OBB) -> bool:
+    """Use the OBB's enclosing AABB for pruning and the OBB for point hits."""
+    return _compressed_quadtree_collides_hybrid(node, obb, obb.enclosing_aabb())
+
+
+def _compressed_quadtree_collides_hybrid(
+    node: CompressedQuadtreeNode, obb: OBB, broad_phase: AABB
+) -> bool:
+    if not aabb_intersects(node.bb, broad_phase):
+        return False
+
+    if node.is_leaf():
+        return any(obb.contains(point) for point in node.points or [])
+
+    return any(
+        _compressed_quadtree_collides_hybrid(child, obb, broad_phase)
+        for child in node.children.values()
+    )

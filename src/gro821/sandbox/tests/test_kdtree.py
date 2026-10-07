@@ -2,7 +2,12 @@ import math
 
 from gro821.sandbox.fmt import ANSI
 from gro821.sandbox.geometry import AABB, OBB, Point
-from gro821.sandbox.structures.kdtree import KdTreeNode, build_kdtree, kdtree_collides_bb
+from gro821.sandbox.structures.kdtree import (
+    KdTreeNode,
+    build_kdtree,
+    kdtree_collides_bb,
+    kdtree_collides_hybrid,
+)
 
 
 def count_nodes(node: KdTreeNode) -> int:
@@ -165,6 +170,17 @@ class TestKdTreeCollision:
 
         assert not kdtree_collides_bb(node, AABB(Point(0, 0), Point(100, 100)))
         assert not kdtree_collides_bb(node, OBB(Point(50, 50), Point(50, 50), 0))
+
+    def test_hybrid_uses_obb_after_aabb_candidate(self):
+        region = AABB(Point(0, 0), Point(100, 100))
+        obb = OBB(Point(50, 50), Point(10, 30), math.pi / 4)
+
+        assert not kdtree_collides_hybrid(
+            build_kdtree([Point(70, 70)], region, capacity=1), obb
+        )
+        assert kdtree_collides_hybrid(
+            build_kdtree([Point(50, 50)], region, capacity=1), obb
+        )
 
 
 def main():
