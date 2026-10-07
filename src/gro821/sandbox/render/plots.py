@@ -45,6 +45,48 @@ def _summary_values(
     return labels, values, errors
 
 
+def _relative_time_values(
+    labels: list[str],
+    values: list[float],
+    errors: list[float],
+    baseline_method: str | None,
+) -> tuple[list[float], list[float]]:
+    if baseline_method is None:
+        return values, errors
+    if baseline_method not in labels:
+        raise ValueError(f"Unknown time baseline method: {baseline_method!r}.")
+
+    baseline = values[labels.index(baseline_method)]
+    if baseline <= 0:
+        raise ValueError("Time baseline must have a positive value.")
+    return (
+        [value / baseline for value in values],
+        [error / baseline for error in errors],
+    )
+
+
+def _time_axis_limits(
+    values: Sequence[float],
+    errors: Sequence[float],
+    *,
+    error_bars: bool,
+) -> tuple[float, float] | None:
+    bounds = [
+        (value - error if error_bars else value, value + error if error_bars else value)
+        for value, error in zip(values, errors)
+        if value > 0
+    ]
+    positive_bounds = [bound for pair in bounds for bound in pair if bound > 0]
+    if not positive_bounds:
+        return None
+    lower = min(positive_bounds)
+    upper = max(positive_bounds)
+    if lower == upper:
+        lower /= 2
+        upper *= 2
+    return lower, upper
+
+
 def plot_metric_summaries(
     results: ComparisonResults,
     *,
@@ -52,9 +94,12 @@ def plot_metric_summaries(
     statistic: str = "mean",
     title: str | None = None,
     error_bars: bool = False,
+    time_baseline: str | None = None,
 ) -> Axes:
     """Plot one summary statistic for every named benchmark method."""
     labels, values, errors = _summary_values(results, metric, statistic)
+    if metric in {"build_time_ns", "query_time_ns"}:
+        values, errors = _relative_time_values(labels, values, errors, time_baseline)
 
     figure = plt.figure(title or f"{statistic} {metric}")
     figure.clear()
@@ -70,7 +115,11 @@ def plot_metric_summaries(
         capsize=4 if error_bars else 0,
     )
     axes.set_title(title or f"{statistic.title()} {metric.replace('_', ' ')}")
-    axes.set_ylabel(metric.replace("_", " ").title())
+    axes.set_ylabel(
+        f"Relative {metric.replace('_', ' ')} (baseline = 1)"
+        if metric in {"build_time_ns", "query_time_ns"} and time_baseline is not None
+        else metric.replace("_", " ").title()
+    )
     axes.set_xticks(positions, labels, rotation=25, ha="right")
     if any(value > 0 for value in values):
         axes.set_yscale("log")
@@ -84,11 +133,16 @@ def plot_benchmark_dashboard(
     statistic: str = "mean",
     error_bars: bool = False,
     title: str = "Benchmark comparison",
+    time_baseline: str | None = None,
 ) -> Figure:
-    """Return one figure containing build, query, and storage metric plots."""
+    """Return build, query, and storage plots with optional relative time values."""
     figure, axes = plt.subplots(1, 3, num=title, clear=True, figsize=(15, 5))
+    time_data: dict[str, tuple[list[str], list[float], list[float]]] = {}
     for axes_item, metric in zip(axes, _METRICS):
         labels, values, errors = _summary_values(results, metric, statistic)
+        if metric in {"build_time_ns", "query_time_ns"}:
+            values, errors = _relative_time_values(labels, values, errors, time_baseline)
+            time_data[metric] = (labels, values, errors)
         positions = np.arange(len(labels))
         colors = plt.get_cmap("tab10")(np.arange(len(labels)) % 10)
         axes_item.bar(
@@ -100,10 +154,27 @@ def plot_benchmark_dashboard(
             capsize=4 if error_bars else 0,
         )
         axes_item.set_title(metric.replace("_", " ").title())
-        axes_item.set_ylabel("Bytes" if metric == "storage_bytes" else "Time (ns)")
+        axes_item.set_ylabel(
+            "Bytes"
+            if metric == "storage_bytes"
+            else (
+                "Relative time (baseline = 1)"
+                if time_baseline is not None
+                else "Time (ns)"
+            )
+        )
         axes_item.set_xticks(positions, labels, rotation=25, ha="right")
         if any(value > 0 for value in values):
             axes_item.set_yscale("log")
+
+    time_limits = _time_axis_limits(
+        [value for _, values, _ in time_data.values() for value in values],
+        [error for _, _, errors in time_data.values() for error in errors],
+        error_bars=error_bars,
+    )
+    if time_limits is not None:
+        axes[0].set_ylim(time_limits)
+        axes[1].set_ylim(time_limits)
     figure.suptitle(title)
     figure.tight_layout()
     return figure

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from random import Random
@@ -65,6 +64,7 @@ class CollisionExperiment:
     bb_type: str = "aabb"
     capacity: int = 1
     seed: int = 0
+    time_baseline: str | None = "kd-tree"
     output_directory: Path | None = None
 
     def run(self) -> ComparisonResults:
@@ -90,13 +90,13 @@ def run_configured_experiments(
 
 
 def main() -> None:
-    _seed = time.time_ns()
+    _seed = 42
     experiments = (
         CollisionExperiment(
             name="sparse-aabb",
             world_width=50,
             world_height=50,
-            sample_count=1000,
+            sample_count=100,
             clusters=10,
             points_per_cluster=10,
             bb_type="aabb",
@@ -107,7 +107,7 @@ def main() -> None:
             name="sparse-obb",
             world_width=50,
             world_height=50,
-            sample_count=1000,
+            sample_count=100,
             clusters=10,
             points_per_cluster=10,
             bb_type="obb",
@@ -118,7 +118,7 @@ def main() -> None:
             name="sparse-hybrid",
             world_width=50,
             world_height=50,
-            sample_count=1000,
+            sample_count=100,
             clusters=10,
             points_per_cluster=10,
             bb_type="hybrid",
@@ -129,7 +129,7 @@ def main() -> None:
             name="assignment-aabb",
             world_width=3,
             world_height=3,
-            sample_count=1000,
+            sample_count=100,
             clusters=10,
             points_per_cluster=10,
             bb_type="aabb",
@@ -140,7 +140,7 @@ def main() -> None:
             name="assignment-obb",
             world_width=3,
             world_height=3,
-            sample_count=1000,
+            sample_count=100,
             clusters=10,
             points_per_cluster=10,
             bb_type="obb",
@@ -151,7 +151,7 @@ def main() -> None:
             name="assignment-hybrid",
             world_width=3,
             world_height=3,
-            sample_count=1000,
+            sample_count=100,
             clusters=10,
             points_per_cluster=10,
             bb_type="hybrid",
@@ -162,7 +162,7 @@ def main() -> None:
             name="real-aabb",
             world_width=5,
             world_height=5,
-            sample_count=1000,
+            sample_count=100,
             clusters=30,
             points_per_cluster=30,
             bb_type="aabb",
@@ -173,7 +173,7 @@ def main() -> None:
             name="real-obb",
             world_width=5,
             world_height=5,
-            sample_count=1000,
+            sample_count=100,
             clusters=30,
             points_per_cluster=30,
             bb_type="obb",
@@ -184,7 +184,7 @@ def main() -> None:
             name="real-hybrid",
             world_width=5,
             world_height=5,
-            sample_count=1000,
+            sample_count=100,
             clusters=30,
             points_per_cluster=30,
             bb_type="hybrid",
@@ -193,7 +193,9 @@ def main() -> None:
         ),
     )
     results_by_name = run_configured_experiments(experiments)
-    for name, results in results_by_name.items():
+    for experiment in experiments:
+        name = experiment.name
+        results = results_by_name[name]
         # export_csv(results, Path("results"), name)
         print(f"{ANSI.DIM}=== {name} ==={ANSI.RESET}\n")
         for summary in results.summaries():
@@ -206,6 +208,7 @@ def main() -> None:
             results,
             error_bars=True,
             title=f"Benchmark - {name}",
+            time_baseline=experiment.time_baseline,
         )
         save_figure_png(dashboard, Path("results") / f"{name}_dashboard.png")
         fmt.LF()
