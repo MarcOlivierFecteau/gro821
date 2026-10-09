@@ -3,7 +3,6 @@ from collections.abc import Mapping
 from sys import getsizeof
 from typing import Any
 
-
 _CONTAINER_TYPES = (list, tuple, set, frozenset, deque)
 
 

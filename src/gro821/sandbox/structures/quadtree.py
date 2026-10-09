@@ -279,9 +279,7 @@ def point_quadtree_collides_hybrid(node: PointQuadtreeNode, obb: OBB) -> bool:
     return _point_quadtree_collides_hybrid(node, obb, obb.enclosing_aabb())
 
 
-def _point_quadtree_collides_hybrid(
-    node: PointQuadtreeNode, obb: OBB, broad_phase: AABB
-) -> bool:
+def _point_quadtree_collides_hybrid(node: PointQuadtreeNode, obb: OBB, broad_phase: AABB) -> bool:
     if not aabb_intersects(node.bb, broad_phase):
         return False
 

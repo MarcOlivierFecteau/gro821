@@ -93,11 +93,6 @@ class AABB:
     start: Point
     end: Point
 
-    def __post_init__(self) -> None:
-        # if self.end - self.start < Point(0, 0):
-        #     raise ValueError("`start` must be the bottom left and `end` the top right.")
-        pass
-
     def __repr__(self) -> str:
         return f"{self.start} -> {self.end}"
 
@@ -118,7 +113,7 @@ class OBB:
             raise ValueError("`half_extents` must be non-negative.")
 
     def contains(self, point: Point) -> bool:
-        """Return whether ``point`` lies inside or on the OBB boundary."""
+        """Return whether `point` lies inside or on the OBB boundary."""
         offset = point - self.center
         cosine = math.cos(self.angle)
         sine = math.sin(self.angle)
