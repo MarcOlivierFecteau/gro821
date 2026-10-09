@@ -8,7 +8,7 @@ import numpy as np
 EPSILON: Final = 1e-9
 
 
-@dataclass
+@dataclass(slots=True)
 class Point:
     x: float
     y: float
@@ -82,13 +82,13 @@ Vec2 = Point
 type Edge = tuple[Point, Point]
 
 
-@dataclass
+@dataclass(slots=True)
 class Circle:
     base: Point
     radius: float
 
 
-@dataclass
+@dataclass(slots=True)
 class AABB:
     start: Point
     end: Point
@@ -100,7 +100,7 @@ class AABB:
         return self.start.x <= point.x <= self.end.x and self.start.y <= point.y <= self.end.y
 
 
-@dataclass
+@dataclass(slots=True)
 class OBB:
     center: Point
     half_extents: Vec2

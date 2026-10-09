@@ -1,13 +1,20 @@
 from dataclasses import dataclass
-from typing import Literal
+from enum import IntEnum
 
 from gro821.sandbox.geometry import AABB, OBB, Point, aabb_intersects, aabb_intersects_obb_sat
 
-type Quadrant = Literal["NW", "NE", "SW", "SE"]
+
+class Quadrant(IntEnum):
+    NW = 0
+    NE = 1
+    SW = 2
+    SE = 3
+
+
 type QuadrantPath = tuple[Quadrant, ...]
 
 
-@dataclass
+@dataclass(slots=True)
 class SpaceQuadtreeNode:
     bb: AABB
     NW: SpaceQuadtreeNode | None
@@ -40,7 +47,7 @@ class SpaceQuadtreeNode:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class PointQuadtreeNode:
     bb: AABB
     split_point: Point | None
@@ -62,7 +69,7 @@ class PointQuadtreeNode:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class CompressedQuadtreeNode:
     bb: AABB
     points: list[Point] | None  # internal nodes: None; [] valid for empty leaf
@@ -106,7 +113,12 @@ def compress_quadtree(node: SpaceQuadtreeNode) -> CompressedQuadtreeNode:
         return CompressedQuadtreeNode(node.bb, node.points, {})
 
     occupied: list[tuple[Quadrant, SpaceQuadtreeNode]] = []
-    for quadrant, child in [("NW", node.NW), ("NE", node.NE), ("SW", node.SW), ("SE", node.SE)]:
+    for quadrant, child in [
+        (Quadrant.NW, node.NW),
+        (Quadrant.NE, node.NE),
+        (Quadrant.SW, node.SW),
+        (Quadrant.SE, node.SE),
+    ]:
         if child is not None and child.count_points() >= 1:
             occupied.append((quadrant, child))  # pyright: ignore[reportArgumentType]
 
@@ -129,10 +141,10 @@ def compress_quadtree(node: SpaceQuadtreeNode) -> CompressedQuadtreeNode:
     while not child.is_leaf():
         child_occupied = []
         for next_quadrant, next_child in [
-            ("NW", child.NW),
-            ("NE", child.NE),
-            ("SW", child.SW),
-            ("SE", child.SE),
+            (Quadrant.NW, child.NW),
+            (Quadrant.NE, child.NE),
+            (Quadrant.SW, child.SW),
+            (Quadrant.SE, child.SE),
         ]:
             if next_child is not None and next_child.count_points() >= 1:
                 child_occupied.append((next_quadrant, next_child))

@@ -5,6 +5,7 @@ from gro821.sandbox.geometry import AABB, OBB, Point
 from gro821.sandbox.structures.quadtree import (
     CompressedQuadtreeNode,
     PointQuadtreeNode,
+    Quadrant,
     SpaceQuadtreeNode,
     build_point_quadtree,
     build_space_quadtree,
@@ -242,7 +243,7 @@ class TestCompressQuadtree:
         compressed = compress_quadtree(build_space_quadtree(points, region, capacity=1))
 
         assert not compressed.is_leaf()
-        assert set(compressed.children) == {("SW",), ("SE",), ("NW",)}
+        assert set(compressed.children) == {(Quadrant.SW,), (Quadrant.SE,), (Quadrant.NW,)}
         assert sorted(collect_compressed_points(compressed), key=lambda p: (p.x, p.y)) == sorted(
             points, key=lambda p: (p.x, p.y)
         )
@@ -253,9 +254,7 @@ class TestCompressQuadtree:
         compressed = compress_quadtree(build_space_quadtree(points, region, capacity=1))
 
         assert compressed_quadtree_collides_aabb(compressed, AABB(Point(25, 25), Point(35, 35)))
-        assert not compressed_quadtree_collides_aabb(
-            compressed, AABB(Point(40, 40), Point(60, 60))
-        )
+        assert not compressed_quadtree_collides_aabb(compressed, AABB(Point(40, 40), Point(60, 60)))
 
     def test_collides_aabb_includes_boundary_points(self):
         region = AABB(Point(0, 0), Point(100, 100))
@@ -271,17 +270,18 @@ class TestCompressQuadtree:
         obb = OBB(Point(50, 50), Point(10, 30), math.pi / 4)
 
         assert compressed_quadtree_collides_obb(compressed, obb)
-        assert compressed_quadtree_collides_obb(
-            compress_quadtree(build_space_quadtree([Point(20, 20)], region)), obb
-        ) is False
+        assert (
+            compressed_quadtree_collides_obb(
+                compress_quadtree(build_space_quadtree([Point(20, 20)], region)), obb
+            )
+            is False
+        )
 
     def test_collisions_on_empty_compressed_tree_are_false(self):
         region = AABB(Point(0, 0), Point(100, 100))
         compressed = compress_quadtree(build_space_quadtree([], region))
 
-        assert not compressed_quadtree_collides_aabb(
-            compressed, AABB(Point(0, 0), Point(100, 100))
-        )
+        assert not compressed_quadtree_collides_aabb(compressed, AABB(Point(0, 0), Point(100, 100)))
         assert not compressed_quadtree_collides_obb(
             compressed, OBB(Point(50, 50), Point(50, 50), 0)
         )

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from gro821.sandbox.world import World
 
 
-@dataclass
+@dataclass(slots=True)
 class RobotConfig:
     base: Final[Point]
     arm_width: Final[float]
