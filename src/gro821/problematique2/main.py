@@ -47,7 +47,7 @@ max_depth: Final = 1  # Upper limit on number of reflections
 WIDTH = 200
 HEIGHT = 150
 
-SHADING = "flat"  # "flat" | "gouraud"
+SHADING = "gouraud"  # "flat" | "gouraud"
 
 # == Intersection test count benchmark
 intersection_test_count = 0
@@ -325,7 +325,7 @@ def main():
     render_start = perf_counter()
     for i, x in enumerate(np.linspace(screen[0], screen[2], WIDTH)):
         if i % 10 == 0:
-            print(f"{100 * i / WIDTH}%")
+            print(f"\r\x1b[0J{100 * i / WIDTH}%", end="")
         for j, y in enumerate(np.linspace(screen[1], screen[3], HEIGHT)):
             pixel_color[:] = 0.0
             cam_focal_point[:2] = (x, y)
@@ -351,6 +351,7 @@ def main():
             image[HEIGHT - j - 1, i, :] = np.clip(pixel_color, 0, 1)
 
     render_end = perf_counter()
+    print("\r\x1b[0JDone.")
 
     print("=== Load Time ===")
     print(f"Load 3D model: {(load_end - load_start):.3f}s")
@@ -363,5 +364,7 @@ def main():
     print("=== Render Time ===")
     print(f"Shading model: {SHADING}")
     print(f"Render: {(render_end - render_start):.3f} s")
-    print(f"Intersection tests: {intersection_test_count} ({intersection_test_count / (WIDTH * HEIGHT):.2f} / px)")
+    print(
+        f"Intersection tests: {intersection_test_count} ({intersection_test_count / (WIDTH * HEIGHT):.2f} / px)"
+    )
     Image.fromarray((255 * image).astype(np.uint8), "RGB").save("out.png")
