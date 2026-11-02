@@ -12,3 +12,5 @@ wheels/
 # Local files
 code_depart.ipynb
 results/
+meshes/
+*.png
