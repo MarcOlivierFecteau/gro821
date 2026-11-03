@@ -4,7 +4,7 @@
 
 Use AABBs to reject rays before primitive tests. Reduces the number of intersection tests.
 
-### Test: Sphere
+### Test: Sphere_0
 
 Configuration:
 
@@ -21,14 +21,14 @@ Results:
 | Render | 0.844 s | 1.513 s |
 | Intersection tests | 79619 (2.65 / px) | 57840 (1.93 / px) |
 
-### Test: Bunny
+### Test: Bunny_res4_0
 
 Configuration:
 
 ```py
 SHADING = "flat"
 scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
-for i in random.sample(range(len(FACES)), len(FACES) // 10):
+for i in random.sample(range(len(FACES)), len(FACES) // 10): # 10% sampled
     scene.append(add_triangle(i, (0.8, 0.8, 0.8)))
 ```
 
@@ -39,12 +39,147 @@ Results:
 | Render | ~80 s | 21.237 s |
 | Intersection tests | ~4.1M (~135 / px) | 1277163 (42.57 / px) |
 
-Conclusion:
+> N.B. Results without "root" AABB were not recorded, and are an estimation.
+
+### Conclusion - "root" AABB
 
 The number of intersection tests is greatly reduced, so the "root" AABB optimization is retained and becomes the new baseline.
 
+## Flat-shading VS Gouraud
+
+The biggest performance gain with the shading comes from precomputing the triangle quantities before starting to render the scene (along with changes to the data model to use indices to shared NumPy arrays instead of per-triangle copies).
+
+## Test: Sphere_1
+
+Configuration:
+
+```py
+SHADING = "flat", "gouraud"
+scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
+scene.append(add_sphere((1, 1, 10), 1.0, (0.8, 0.6, 1.0)))
+```
+
+Results:
+
+| Metric | Flat | Gouraud |
+| --- | --- | --- |
+| Render | 1.598 s | 1.576 s |
+| Intersection tests | 57840 (1.93 / px) | 57840 (1.93 / px) |
+
+## Test: Bunny_res4_1
+
+Configuration:
+
+```py
+SHADING = "flat", "gouraud"
+scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
+for i in random.sample(range(len(FACES)), len(FACES) // 10): # 10% sampled
+    scene.append(add_triangle(i, (0.8, 0.8, 0.8)))
+```
+
+Results:
+
+| Metric | Flat | Gouraud |
+| --- | --- | --- |
+| Render | 20.681 s | 20.637 s |
+| Intersection tests | 1231995 (41.07 / px) | 1228589 (40.95 / px) |
+
+### Conclusion - Shading Model
+
+The number of intersection tests is roughly equivalent between the two shading models, so for simplicity, flat-shading will be used for the baseline.
+
 ## Octree
 
-Build an Octree of the scene objects to reject trays before primitive tests. Reduces the number of intersection tests, at the cost of memory and compute time to build the octree.
+Build an Octree of the scene objects to reject rays before primitive tests. Reduces the number of intersection tests, at the cost of memory and compute time to build the octree.
 
+### Test: Sphere_2
 
+Configuration:
+
+```py
+SHADING = "flat"
+ACCELERATION = "root_aabb" # Before
+ACCELERATION = "octree" # After
+scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
+scene.append(add_sphere((1, 1, 10), 1.0, (0.8, 0.6, 1.0)))
+```
+
+Results:
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Render | 1.564 s | 1.684 s |
+| Intersection tests | 57840 (1.93 / px) | 57840 (1.93 / px) |
+
+### Test: Bunny_res4_2
+
+Configuration:
+
+```py
+SHADING = "flat"
+ACCELERATION = "root_aabb" # Before
+ACCELERATION = "octree" # After
+scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
+for i in random.sample(range(len(FACES)), len(FACES) // 10): # 10% sampled
+    scene.append(add_triangle(i, (0.8, 0.8, 0.8)))
+```
+
+Results:
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Render | 21.673 s | 11.005 s |
+| Intersection tests | 1256698 (41.89 / px) | 456594 (15.22 / px) |
+
+### Test: Bunny_res4_3
+
+Configuration:
+
+PLY: 453 vertices, 948 faces
+
+```py
+SHADING = "flat"
+ACCELERATION = "root_aabb" # Before
+ACCELERATION = "octree" # After
+scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
+for i in random.sample(range(len(FACES)), len(FACES) // 2): # 50% sampled
+    scene.append(add_triangle(i, (0.8, 0.8, 0.8)))
+```
+
+Results:
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Render | 126.215 s | 54.231 s |
+| Intersection tests | 7911941 (263.73 / px) | 2950037 (98.33 / px) |
+
+### Test: Bunny_res3_0
+
+Configuration:
+
+PLY: 1889 vertices, 3851 faces
+
+```py
+SHADING = "flat"
+ACCELERATION = "root_aabb" # Before
+ACCELERATION = "octree" # After
+bunny.load(f"{root}/meshes/bun_zipper_res3.ply", scale=5.0)
+scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
+for i in random.sample(range(len(FACES)), len(FACES) // 10): # 10% sampled
+    scene.append(add_triangle(i, (0.8, 0.8, 0.8)))
+```
+
+Results:
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Render | 81.231 s | 23.102 s |
+| Intersection tests | 5163246 (172.11 / px) | 1083517 (36.12 / px) |
+
+### Conclusion - Octree
+
+The number of intersection tests is greatly reduced, so the octree optimization is retained. However, the "root" AABB method remains the baseline for now.
+
+## BVH
+
+Build a BVH of the scene objects to reject rays before primitive tests. Reduces the number of intersection tests, at the cost of memory and compute time to build the BVH.

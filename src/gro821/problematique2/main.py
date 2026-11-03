@@ -13,6 +13,8 @@ from PIL import Image
 
 from gro821.problematique2 import bunny
 from gro821.problematique2.aabb import AABB, intersects_aabb, root_aabb
+# from gro821.problematique2.bvh import BVH, build_bvh, query_bvh
+from gro821.problematique2.octree import Octree, build_octree, query_octree
 
 type Vector = np.ndarray[tuple[int], np.dtype[np.float32]]
 Point = Vertex = Vector
@@ -49,6 +51,9 @@ WIDTH = 200
 HEIGHT = 150
 
 SHADING = "flat"  # "flat" | "gouraud"
+
+# Ray rejection method
+ACCELERATION = "root_aabb"  # "root_aabb" | "octree"
 
 # == Intersection test count benchmark
 intersection_test_count = 0
@@ -141,18 +146,37 @@ def intersect_scene(
     root_bounds: AABB | None,
     origin: Point,
     direction: Vector,
+    octree: Octree | None = None,
+    # bvh: BVH | None = None,
 ) -> list[tuple[int, tuple[float, float, float]]]:
-    # == Root AABB ray rejection (compute)
-    # Avoid all finite-object primitive tests when a ray misses their shared
-    # scene bounds. Unbounded planes are still tested so their behavior is
-    # unchanged.
-    finite_objects_visible = (
-        root_bounds is None or intersects_aabb(origin, direction, root_bounds)
+    # == Selectable spatial acceleration (compute-wise)
+    # Keep the root AABB baseline available for comparison while allowing the
+    # octree to reject objects using smaller node bounds.
+    if ACCELERATION == "octree":
+        finite_object_indices = query_octree(octree, origin, direction)
+    # elif ACCELERATION == "bvh":
+    #     finite_object_indices = query_bvh(bvh, origin, direction)
+    elif ACCELERATION == "root_aabb":
+        finite_objects_visible = (
+            root_bounds is None or intersects_aabb(origin, direction, root_bounds)
+        )
+        finite_object_indices = (
+            [i for i, obj in enumerate(scene) if obj["type"] != ObjectType.PLANE]
+            if finite_objects_visible
+            else []
+        )
+    else:
+        raise ValueError(f"Unsupported acceleration mode: {ACCELERATION}.")
+
+    intersections = [
+        (i, intersect(origin, direction, scene[i]))
+        for i in finite_object_indices
+    ]
+    intersections.extend(
+        (i, intersect(origin, direction, obj))
+        for i, obj in enumerate(scene)
+        if obj["type"] == ObjectType.PLANE
     )
-    intersections = []
-    for i, obj in enumerate(scene):
-        if obj["type"] == ObjectType.PLANE or finite_objects_visible:
-            intersections.append((i, intersect(origin, direction, obj)))
     return intersections
 
 
@@ -196,12 +220,14 @@ def trace_ray(
     origin: Point,
     direction: Vector,
     root_bounds: AABB | None = None,
+    octree: Octree | None = None,
+    # bvh: BVH | None = None,
 ) -> tuple[Object, Point, Vector, Vector] | None:
     t = np.inf
     u = v = 0.0
     obj_index: int = len(scene) + 1  # OOB initalization
     for obj_index_candidate, intersection in intersect_scene(
-        scene, root_bounds, origin, direction
+        scene, root_bounds, origin, direction, octree#, bvh
     ):
         obj_intersect_dist, u_hit, v_hit = intersection
         if obj_intersect_dist < t:
@@ -223,7 +249,7 @@ def trace_ray(
     intersects = [
         intersection[0]
         for candidate_index, intersection in intersect_scene(
-            scene, root_bounds, light, dir_from_light
+            scene, root_bounds, light, dir_from_light, octree#, bvh
         )
         if scene[candidate_index] is not obj
     ]
@@ -335,7 +361,7 @@ def main():
 
     # === Populate scene ===
     scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
-    # scene.append(add_sphere((1, 1, 10), 1.0, (0.8, 0.8, 0.8)))
+    # scene.append(add_sphere((1, 1, 10), 1.0, (0.8, 0.6, 1.0)))
     for i in random.sample(range(len(FACES)), len(FACES) // 10):
         scene.append(add_triangle(i, (0.8, 0.8, 0.8)))
 
@@ -343,6 +369,14 @@ def main():
     # The finite scene bounds are computed once instead of per-camera and 
     # per-ray. The plane is intentionally excluded because it is unbounded.
     scene_root_aabb = root_aabb(scene)
+    # == Octree precomputation (compute-wise)
+    # Build the alternative hierarchy once before rendering so its construction
+    # cost is not repeated for camera or shadow rays.
+    scene_octree = build_octree(scene)
+    # == BVH precomputation (compute-wise)
+    # Build the alternative hierarchy once before rendering so its construction
+    # cost is not repeated for camera or shadow rays.
+    # scene_bvh = build_bvh(scene)
 
     # === Configure camera/viewpoint ===
     pixel_color = np.array([0, 0, 0], dtype=np.float64)
@@ -368,7 +402,13 @@ def main():
             reflection = 1.0
             while depth < max_depth:
                 traced = trace_ray(
-                    scene, light_pos, ray_origin, ray_direction, scene_root_aabb
+                    scene,
+                    light_pos,
+                    ray_origin, # pyright: ignore[reportArgumentType]
+                    ray_direction,
+                    scene_root_aabb,
+                    scene_octree,
+                    # scene_bvh,
                 )  # pyright: ignore[reportArgumentType]
                 if traced is None:
                     break
