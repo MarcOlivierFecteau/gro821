@@ -250,3 +250,11 @@ Results:
 ### Conclusion - BVH
 
 The number of intersection tests is greatly reduced, and seem to scale better with the number of triangles, so the BVH optimization is retained, and becomes the new baseline.
+
+## Distance Pruning & Back-Face Culling
+
+TODO
+
+### Conclusion - Distance Pruning & Back-Face Culling
+
+Back-face culling: "free, but does not do much". Distance pruning: "10% faster, but BVH is already 90% faster, so essentially 1% faster". Combined: TODO (probably less than the sum of each, so diminishing returns).

@@ -5,14 +5,14 @@ from typing import Any
 
 import numpy as np
 
-from gro821.problematique2.aabb import AABB, intersects_aabb, object_aabb, root_aabb
+from gro821.problematique2.aabb import AABB, intersect_aabb, object_aabb, root_aabb
 
 
 @dataclass(slots=True)
 class OctreeNode:
     bounds: AABB
     object_indices: list[int]
-    children: list["OctreeNode"]
+    children: list[OctreeNode]
 
 
 @dataclass(slots=True)
@@ -124,16 +124,24 @@ def query_octree(
     tree: Octree | None,
     origin: np.ndarray,
     direction: np.ndarray,
+    t_max: float = np.inf,
 ) -> list[int]:
     """Return finite object indices whose octree nodes intersect a ray."""
-    if tree is None or not intersects_aabb(origin, direction, tree.root.bounds):
+    if tree is None:
+        return []
+    if intersect_aabb(origin, direction, tree.root.bounds) is None:
         return []
 
     object_indices: list[int] = []
     nodes = [tree.root]
     while nodes:
         node = nodes.pop()
-        if not intersects_aabb(origin, direction, node.bounds):
+        # == Distance pruning
+        interval = intersect_aabb(origin, direction, node.bounds)
+        if interval is None:
+            continue
+        t_near, _ = interval
+        if t_near > t_max:
             continue
         object_indices.extend(node.object_indices)
         nodes.extend(node.children)

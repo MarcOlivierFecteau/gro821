@@ -110,6 +110,11 @@ def intersect_triangle(
     det = np.dot(e1, pv)
     if abs(det) < EPS:
         return np.inf, 0.0, 0.0
+    # == Back-face culling (compute)
+    # Essentially a "win for free".
+    # NOTE: did NOT reduce the number of tests.
+    if det >= 0:
+        return np.inf, 0.0, 0.0
 
     idet = 1.0 / det
     tv = origin - p1
@@ -148,14 +153,15 @@ def intersect_scene(
     direction: Vector,
     octree: Octree | None = None,
     bvh: BVH | None = None,
+    t_max: float = np.inf,
 ) -> list[tuple[int, tuple[float, float, float]]]:
     # == Selectable spatial acceleration (compute)
     # Keep the root AABB baseline available for comparison while allowing the
     # other methods to reject objects using smaller node bounds.
     if ACCELERATION == "octree":
-        finite_object_indices = query_octree(octree, origin, direction)
+        finite_object_indices = query_octree(octree, origin, direction, t_max)
     elif ACCELERATION == "bvh":
-        finite_object_indices = query_bvh(bvh, origin, direction)
+        finite_object_indices = query_bvh(bvh, origin, direction, t_max)
     elif ACCELERATION == "root_aabb":
         finite_objects_visible = root_bounds is None or intersects_aabb(
             origin, direction, root_bounds
@@ -243,14 +249,20 @@ def trace_ray(
 
     # Find if point is shadowed
     dir_from_light = normalize(intersect_point - light)  # pyright: ignore[reportArgumentType]
+    # == Distance pruning (compute)
+    dist_light_to_point = np.linalg.norm(light - intersect_point)
+    t_max_shadow = dist_light_to_point - 1e-4  # Avoid self-hit at the endpoint
     intersects = [
         intersection[0]
         for candidate_index, intersection in intersect_scene(
-            scene, root_bounds, light, dir_from_light, octree, bvh
+            scene, root_bounds, light, dir_from_light, octree, bvh, t_max=t_max_shadow
         )
         if scene[candidate_index] is not obj
     ]
     dist_light_to_intersect_point = np.linalg.norm(light - intersect_point)
+    # == Distance pruning
+    # Distance check is now implicit in t_max, but kept as a cheap safety net
+    # (e.g. for "root_aabb" mode, which ignores t_max).
     if intersects and min(intersects) < dist_light_to_intersect_point:
         return None
 

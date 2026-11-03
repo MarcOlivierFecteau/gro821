@@ -36,17 +36,17 @@ def root_aabb(objects: list[dict[str, Any]]) -> AABB | None:
     )
 
 
-def intersects_aabb(
+def intersect_aabb(
     origin: np.ndarray,
     direction: np.ndarray,
     bounds: AABB,
-) -> bool:
+) -> tuple[float, float] | None:
     """Return whether a forward ray intersects an AABB."""
     minimum, maximum = bounds
     parallel = direction == 0
     parallel_outside = parallel & ((origin < minimum) | (origin > maximum))
     if np.any(parallel_outside):
-        return False
+        return None
 
     with np.errstate(divide="ignore", invalid="ignore"):
         inverse_direction = np.divide(
@@ -60,4 +60,16 @@ def intersects_aabb(
 
     near = np.where(parallel, -np.inf, np.minimum(distances_a, distances_b))
     far = np.where(parallel, np.inf, np.maximum(distances_a, distances_b))
-    return bool(np.max(near) <= np.min(far) and np.min(far) >= 0.0)
+    # == Distance pruning
+    # Promoting returned value to hit interval instead of boolean.
+    # Note that casting to float to compute `t_near > t_far` on scalars once
+    # instead of via NumPy reductions on combined boolean: (marginally) cheaper.
+    t_near = float(np.max(near))
+    t_far = float(np.min(far))
+    if t_near > t_far or t_far < 0.0:
+        return None
+    return t_near, t_far
+
+
+def intersects_aabb(origin: np.ndarray, direction: np.ndarray, bounds: AABB) -> bool:
+    return intersect_aabb(origin, direction, bounds) is None

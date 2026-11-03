@@ -5,14 +5,14 @@ from typing import Any
 
 import numpy as np
 
-from gro821.problematique2.aabb import AABB, intersects_aabb, object_aabb
+from gro821.problematique2.aabb import AABB, intersect_aabb, object_aabb
 
 
 @dataclass(slots=True)
 class BVHNode:
     bounds: AABB
     object_indices: list[int]
-    children: tuple["BVHNode", "BVHNode"] | None = None
+    children: tuple[BVHNode, BVHNode] | None = None
 
 
 @dataclass(slots=True)
@@ -89,16 +89,25 @@ def query_bvh(
     tree: BVH | None,
     origin: np.ndarray,
     direction: np.ndarray,
+    t_max: float = np.inf,
 ) -> list[int]:
     """Return finite object indices whose BVH bounds intersect a ray."""
-    if tree is None or not intersects_aabb(origin, direction, tree.root.bounds):
+    if tree is None:
+        return []
+    if intersect_aabb(origin, direction, tree.root.bounds) is None:
         return []
 
     object_indices: list[int] = []
     nodes = [tree.root]
     while nodes:
         node = nodes.pop()
-        if not intersects_aabb(origin, direction, node.bounds):
+        # == Distance pruning (compute)
+        # Prune entire subtrees if they are beyond the distance we care about.
+        interval = intersect_aabb(origin, direction, node.bounds)
+        if interval is None:
+            continue
+        t_near, _ = interval
+        if t_near > t_max: # Subtree is beyond: prune it
             continue
         if node.children is None:
             object_indices.extend(node.object_indices)
