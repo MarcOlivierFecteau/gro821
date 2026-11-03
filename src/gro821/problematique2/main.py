@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from gro821.problematique2 import bunny
+from gro821.problematique2.aabb import AABB, intersects_aabb, root_aabb
 
 type Vector = np.ndarray[tuple[int], np.dtype[np.float32]]
 Point = Vertex = Vector
@@ -47,7 +48,7 @@ max_depth: Final = 1  # Upper limit on number of reflections
 WIDTH = 200
 HEIGHT = 150
 
-SHADING = "gouraud"  # "flat" | "gouraud"
+SHADING = "flat"  # "flat" | "gouraud"
 
 # == Intersection test count benchmark
 intersection_test_count = 0
@@ -135,6 +136,26 @@ def intersect(origin: Point, direction: Vector, obj: Object):
             raise ValueError(f"Unsupported object type: {obj['type']}.")
 
 
+def intersect_scene(
+    scene: list[Object],
+    root_bounds: AABB | None,
+    origin: Point,
+    direction: Vector,
+) -> list[tuple[int, tuple[float, float, float]]]:
+    # == Root AABB ray rejection (compute)
+    # Avoid all finite-object primitive tests when a ray misses their shared
+    # scene bounds. Unbounded planes are still tested so their behavior is
+    # unchanged.
+    finite_objects_visible = (
+        root_bounds is None or intersects_aabb(origin, direction, root_bounds)
+    )
+    intersections = []
+    for i, obj in enumerate(scene):
+        if obj["type"] == ObjectType.PLANE or finite_objects_visible:
+            intersections.append((i, intersect(origin, direction, obj)))
+    return intersections
+
+
 def get_normal(obj: Object, intersect_point: Point, u: float = 0.0, v: float = 0.0) -> Vector:
     """Compute the normal of an object."""
     match obj["type"]:
@@ -170,15 +191,21 @@ def get_color(obj: Object, intersect_point: Point) -> Vector:
 
 
 def trace_ray(
-    scene: list[Object], light: Point, origin: Point, direction: Vector
+    scene: list[Object],
+    light: Point,
+    origin: Point,
+    direction: Vector,
+    root_bounds: AABB | None = None,
 ) -> tuple[Object, Point, Vector, Vector] | None:
     t = np.inf
     u = v = 0.0
     obj_index: int = len(scene) + 1  # OOB initalization
-    for i, obj in enumerate(scene):
-        obj_intersect_dist, u_hit, v_hit = intersect(origin, direction, obj)
+    for obj_index_candidate, intersection in intersect_scene(
+        scene, root_bounds, origin, direction
+    ):
+        obj_intersect_dist, u_hit, v_hit = intersection
         if obj_intersect_dist < t:
-            t, obj_index, u, v = obj_intersect_dist, i, u_hit, v_hit
+            t, obj_index, u, v = obj_intersect_dist, obj_index_candidate, u_hit, v_hit
 
     if t == np.inf:
         return None
@@ -194,9 +221,11 @@ def trace_ray(
     # Find if point is shadowed
     dir_from_light = normalize(intersect_point - light)  # pyright: ignore[reportArgumentType]
     intersects = [
-        intersect(light, dir_from_light, candidate)[0]
-        for candidate in scene
-        if candidate is not obj
+        intersection[0]
+        for candidate_index, intersection in intersect_scene(
+            scene, root_bounds, light, dir_from_light
+        )
+        if scene[candidate_index] is not obj
     ]
     dist_light_to_intersect_point = np.linalg.norm(light - intersect_point)
     if intersects and min(intersects) < dist_light_to_intersect_point:
@@ -249,7 +278,6 @@ def add_plane(pos: Point3, normal: Vec3) -> Object:
 
 
 def add_triangle(face_idx: int, color: RGB) -> Object:
-    global VERTICES, EDGES_1, EDGES_2, FACES, NORMALS
     # == Precomputed triangle properties and quantities (memory, compute)
     # Scene triangles stop storing `np.array` copies of their corners; they
     # store indices or a slice/view into shared arrays, so every triangle
@@ -307,9 +335,14 @@ def main():
 
     # === Populate scene ===
     scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
-    # scene.append(add_sphere((1, 1, 0), 3.0, (0.8, 0.8, 0.8)))
+    # scene.append(add_sphere((1, 1, 10), 1.0, (0.8, 0.8, 0.8)))
     for i in random.sample(range(len(FACES)), len(FACES) // 10):
         scene.append(add_triangle(i, (0.8, 0.8, 0.8)))
+
+    # == Root AABB precomputation (compute)
+    # The finite scene bounds are computed once instead of per-camera and 
+    # per-ray. The plane is intentionally excluded because it is unbounded.
+    scene_root_aabb = root_aabb(scene)
 
     # === Configure camera/viewpoint ===
     pixel_color = np.array([0, 0, 0], dtype=np.float64)
@@ -334,7 +367,9 @@ def main():
             depth: int = 0
             reflection = 1.0
             while depth < max_depth:
-                traced = trace_ray(scene, light_pos, ray_origin, ray_direction)  # pyright: ignore[reportArgumentType]
+                traced = trace_ray(
+                    scene, light_pos, ray_origin, ray_direction, scene_root_aabb
+                )  # pyright: ignore[reportArgumentType]
                 if traced is None:
                     break
                 obj, intersect_point, obj_normal, ray_color = traced
