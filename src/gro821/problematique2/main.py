@@ -3,6 +3,7 @@ Re-implementation of `raytracing.py` from the provided codebase.
 """
 
 import random
+import heapq
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
@@ -12,9 +13,10 @@ import numpy as np
 from PIL import Image
 
 from gro821.problematique2 import bunny
-from gro821.problematique2.aabb import AABB, intersects_aabb, root_aabb
+from gro821.problematique2.aabb import AABB, intersects_aabb, root_aabb, intersect_aabb
 from gro821.problematique2.bvh import BVH, build_bvh, query_bvh
 from gro821.problematique2.octree import Octree, build_octree, query_octree
+from gro821.problematique2.mesh import Mesh
 
 type Vector = np.ndarray[tuple[int], np.dtype[np.float32]]
 Point = Vertex = Vector
@@ -54,6 +56,7 @@ SHADING = "flat"  # "flat" | "gouraud"
 
 # Ray rejection method
 ACCELERATION = "bvh"  # "root_aabb" | "octree" | "bvh"
+EARLY_EXIT = True
 
 # == Intersection test count benchmark
 intersection_test_count = 0
@@ -129,6 +132,20 @@ def intersect_triangle(
         return np.inf, 0.0, 0.0
 
     return np.dot(e2, qv) * idet, u, v
+
+
+def intersect_mesh(
+    origin: Point,
+    direction: Vector,
+    mesh: Mesh,
+    candidate_ids: np.typing.NDArray[np.int32],
+):
+    e1 = mesh.edge1[candidate_ids]
+    e2 = mesh.edge2[candidate_ids]
+    p1 = mesh.vertices[mesh.faces[candidate_ids, 0]]
+
+    # TODO: Vectorized Möller-Trumbore
+    raise NotImplementedError()
 
 
 def intersect(origin: Point, direction: Vector, obj: Object):
@@ -240,7 +257,7 @@ def trace_ray(
         return None
     obj = scene[obj_index]
 
-    # Find point of insertect on object
+    # Find point of insersect on object
     intersect_point = origin + direction * t
     obj_normal = get_normal(obj, intersect_point, u, v)  # pyright: ignore[reportArgumentType]
     obj_color = get_color(obj, intersect_point)  # pyright: ignore[reportArgumentType]
@@ -250,38 +267,112 @@ def trace_ray(
     # Find if point is shadowed
     dir_from_light = normalize(intersect_point - light)  # pyright: ignore[reportArgumentType]
     # == Distance pruning (compute)
-    dist_light_to_point = np.linalg.norm(light - intersect_point)
-    t_max_shadow = dist_light_to_point - 1e-4  # Avoid self-hit at the endpoint
-    intersects = [
-        intersection[0]
+    dist_light_to_intersect_point = np.linalg.norm(light - intersect_point)
+    t_max_shadow = dist_light_to_intersect_point - 1e-4  # Avoid self-hit at the endpoint
+    # == Early exit (compute)
+    # Front-to-back traversal to stop at first valid hit.
+    if EARLY_EXIT:
+        best_hit_dist = np.inf
+        hit_found = False
+
+        for candidate_index, candidate in enumerate(scene):
+            if candidate is obj:
+                continue
+            if candidate["type"] == ObjectType.PLANE:
+                distance, _, _ = intersect(light, dir_from_light, candidate)
+                if 0 <= distance < best_hit_dist:
+                    best_hit_dist = distance
+                    hit_found = True
+        _root_bounds = None
+        _root = None
+        if root_bounds is not None:
+            _root_bounds = root_bounds
+        elif octree is not None:
+            _root = octree.root
+            _root_bounds = octree.root.bounds
+        elif bvh is not None:
+            _root = bvh.root
+            _root_bounds = bvh.root.bounds
+        else:
+            raise ValueError("No root bounds")
+        q = []
+        heapq.heapify(q)
+        root_interval = intersect_aabb(light, dir_from_light, _root_bounds)
+        if root_interval:
+            heapq.heappush(q, (root_interval[0], _root))
+        while q:
+            node_near, node = heapq.heappop(q)
+            # No later node can contain a closer hit
+            if node_near >= best_hit_dist:
+                break
+            if node_near > t_max_shadow:
+                break
+            if node is None:
+                break
+
+            # Test objects stored directly in node
+            for candidate_index in node.object_indices:
+                if scene[candidate_index] is obj:
+                    continue
+
+                distance, _, _ = intersect(light, dir_from_light, scene[candidate_index])
+                if 0 <= distance < best_hit_dist:
+                    best_hit_dist = distance
+                    hit_found = True
+            # Add children in ray-entry order
+            if node.children is not None:
+                for child in node.children:
+                    child_interval = intersect_aabb(light, dir_from_light, child.bounds)
+                    if not child_interval:
+                        continue
+                    child_near, _ = child_interval
+                    if child_near > t_max_shadow:
+                        continue
+                    if child_near >= best_hit_dist:
+                        continue
+                    heapq.heappush(q, (child_near, child))
+        if hit_found and best_hit_dist < dist_light_to_intersect_point:
+            return None
+        else:
+            ray_color = glob_ambient
+
+            diffuse_coeff = obj.get("diffuse_c", glob_diffuse_coeff)
+            ray_color += diffuse_coeff * max(np.dot(obj_normal, dir_to_light), 0) * obj_color
+
+            specular_coeff = obj.get("specular_c", glob_specular_coeff)
+            ray_color += (
+                specular_coeff
+                * max(np.dot(obj_normal, normalize(dir_to_light + dir_to_origin)), 0)
+                ** glob_specular_k
+            )
+
+            return obj, intersect_point, obj_normal, ray_color  # pyright: ignore[reportReturnType]
+    else:
+        intersects = []
         for candidate_index, intersection in intersect_scene(
             scene, root_bounds, light, dir_from_light, octree, bvh, t_max=t_max_shadow
+        ):
+            if scene[candidate_index] is not obj:
+                intersects.append(intersection[0])
+        # == Distance pruning
+        # Distance check is now implicit in t_max, but kept as a cheap safety net
+        # (e.g. for "root_aabb" mode, which ignores t_max).
+        if intersects and min(intersects) < dist_light_to_intersect_point:
+            return None
+
+        # Compute pixel color
+        ray_color = glob_ambient
+
+        diffuse_coeff = obj.get("diffuse_c", glob_diffuse_coeff)
+        ray_color += diffuse_coeff * max(np.dot(obj_normal, dir_to_light), 0) * obj_color
+
+        specular_coeff = obj.get("specular_c", glob_specular_coeff)
+        ray_color += (
+            specular_coeff
+            * max(np.dot(obj_normal, normalize(dir_to_light + dir_to_origin)), 0) ** glob_specular_k
         )
-        if scene[candidate_index] is not obj
-    ]
-    dist_light_to_intersect_point = np.linalg.norm(light - intersect_point)
-    # == Distance pruning
-    # Distance check is now implicit in t_max, but kept as a cheap safety net
-    # (e.g. for "root_aabb" mode, which ignores t_max).
-    if intersects and min(intersects) < dist_light_to_intersect_point:
-        return None
 
-    # Compute pixel color
-    global glob_ambient, glob_diffuse_coeff, glob_specular_coeff, glob_specular_k  # noqa: PLW0602
-    ray_color = glob_ambient
-
-    diffuse_coeff = obj.get("diffuse_c", glob_diffuse_coeff)
-    assert isinstance(diffuse_coeff, float)
-    ray_color += diffuse_coeff * max(np.dot(obj_normal, dir_to_light), 0) * obj_color
-
-    specular_coeff = obj.get("specular_c", glob_specular_coeff)
-    assert isinstance(specular_coeff, float)
-    ray_color += (
-        specular_coeff
-        * max(np.dot(obj_normal, normalize(dir_to_light + dir_to_origin)), 0) ** glob_specular_k
-    )
-
-    return obj, intersect_point, obj_normal, ray_color  # pyright: ignore[reportReturnType]
+        return obj, intersect_point, obj_normal, ray_color  # pyright: ignore[reportReturnType]
 
 
 def add_sphere(pos: Point3, radius: float, color: RGB) -> Object:
@@ -297,7 +388,7 @@ def add_sphere(pos: Point3, radius: float, color: RGB) -> Object:
 def get_plane_color(intersect_point: Point) -> Vector:
     x_index = int(intersect_point[0] * 2) % 2
     z_index = int(intersect_point[2] * 2) % 2
-    return plane_color_pair[x_index == z_index]
+    return plane_color_pair[x_index != z_index]
 
 
 def add_plane(pos: Point3, normal: Vec3) -> Object:
@@ -337,7 +428,7 @@ def main():
     global VERTICES_NORMALS  # Vertices quantities (Gouraud shading)
 
     load_start = perf_counter()
-    VERTICES, FACES = bunny.load(f"{root}/meshes/bun_zipper_res3.ply", scale=5.0)
+    VERTICES, FACES = bunny.load(f"{root}/meshes/bun_zipper_res4.ply", scale=5.0)
     load_end = perf_counter()
 
     # == Precomputation of triangle properties (compute)
@@ -354,6 +445,9 @@ def main():
     EDGES_1 = p2 - p1  # (M, 3)
     EDGES_2 = p3 - p1  # (M, 3)
     NORMALS = normalize(np.cross(EDGES_1, EDGES_2))  # Face normals
+    points = np.stack((p1, p2, p3), axis=1)
+    bounds_min = points.min(axis=1)
+    bounds_max = points.max(axis=1)
     flat_shading_precompute_end = perf_counter()
 
     # == Gouraud shading -- Precompute vertex normals
@@ -368,6 +462,18 @@ def main():
     np.divide(VERTICES_NORMALS, lengths, out=VERTICES_NORMALS, where=lengths > 0)
     gouraud_shading_precompute_end = perf_counter()
 
+    # == Mesh object (memory, compute)
+    # _bunny = Mesh(
+    #     VERTICES,
+    #     FACES,
+    #     EDGES_1,
+    #     EDGES_2,
+    #     NORMALS,
+    #     bounds_min,
+    #     bounds_max,
+    #     VERTICES_NORMALS,
+    # )
+
     # === Populate scene ===
     scene = [add_plane((0.0, -0.5, 0.0), (0.0, 1.0, 0.0))]
     # scene.append(add_sphere((1, 1, 10), 1.0, (0.8, 0.6, 1.0)))
@@ -375,6 +481,9 @@ def main():
     #     scene.append(add_triangle(i, (255.0 * 0.7, 255.0 * 0.7, 255.0 * 0.7)))
     for i in range(len(FACES)):
         scene.append(add_triangle(i, (255.0 * 0.7, 255.0 * 0.7, 255.0 * 0.7)))
+
+    # == Mesh object (memory, compute)
+    # scene.append(_bunny)
 
     # == Root AABB precomputation (compute)
     # The finite scene bounds are computed once instead of per-camera and
