@@ -39,10 +39,7 @@ def _build_node(
         return BVHNode(bounds, object_indices)
 
     centroids = np.stack(
-        [
-            (object_bounds[index][0] + object_bounds[index][1]) / 2
-            for index in object_indices
-        ]
+        [(object_bounds[index][0] + object_bounds[index][1]) / 2 for index in object_indices]
     )
     split_axis = int(np.argmax(np.ptp(centroids, axis=0)))
     ordering = np.argsort(centroids[:, split_axis], kind="stable")
@@ -56,33 +53,46 @@ def _build_node(
     return BVHNode(bounds, [], children)
 
 
+def build_bvh_from_bounds(
+    bounds_list: list[AABB],
+    max_objects: int = 4,
+    max_depth: int = 32,
+) -> BVH:
+    """Build a median-split BVH over a list of AABBs (one per primitive)."""
+    object_bounds = dict(enumerate(bounds_list))
+    return BVH(_build_node(list(object_bounds), object_bounds, max_objects, max_depth, 0))
+
+
 def build_bvh(
     objects: list[dict[str, Any]],
     max_objects: int = 4,
     max_depth: int = 32,
 ) -> BVH | None:
-    """Build a median-split BVH containing every finite object."""
+    """
+    Build a median-split BVH containing every finite object.
+
+    `Mesh` objects contribute one leaf entry per face.
+    """
     if max_objects < 1:
         raise ValueError("max_objects must be positive.")
     if max_depth < 0:
         raise ValueError("max_depth must be non-negative.")
 
-    object_bounds = {
-        index: bounds
-        for index, obj in enumerate(objects)
-        if (bounds := object_aabb(obj)) is not None
-    }
-    if not object_bounds:
+    bounds_list: list[AABB] = []
+    for obj in objects:
+        match obj["type"]:
+            case "mesh":
+                mesh = obj["mesh"]
+                bounds_list.extend(zip(mesh.bounds_min, mesh.bounds_max))
+            case "plane":
+                continue
+            case _:
+                b = object_aabb(obj)
+                if b is not None:
+                    bounds_list.append(b)
+    if not bounds_list:
         return None
-    return BVH(
-        _build_node(
-            list(object_bounds),
-            object_bounds,
-            max_objects,
-            max_depth,
-            0,
-        )
-    )
+    return build_bvh_from_bounds(bounds_list, max_objects, max_depth)
 
 
 def query_bvh(
@@ -107,7 +117,7 @@ def query_bvh(
         if interval is None:
             continue
         t_near, _ = interval
-        if t_near > t_max: # Subtree is beyond: prune it
+        if t_near > t_max:  # Subtree is beyond: prune it
             continue
         if node.children is None:
             object_indices.extend(node.object_indices)

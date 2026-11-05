@@ -5,7 +5,8 @@ from typing import Any
 
 import numpy as np
 
-from gro821.problematique2.aabb import AABB, intersect_aabb, object_aabb, root_aabb
+from gro821.problematique2.aabb import AABB, intersect_aabb, object_aabb
+from gro821.problematique2.mesh import Mesh
 
 
 @dataclass(slots=True)
@@ -90,34 +91,61 @@ def _build_node(
     return node
 
 
+def build_octree_from_bounds(
+    root_bounds: AABB,
+    bounds_list: list[AABB],
+    max_objects: int = 8,
+    max_depth: int = 8,
+) -> Octree:
+    """Build an octree over a list of AABBs (one per primitive) inside `root_bounds`."""
+    if max_objects < 1:
+        raise ValueError("max_objects must be positive.")
+    if max_depth < 0:
+        raise ValueError("max_depth must be non-negative.")
+    object_bounds = dict(enumerate(bounds_list))
+    return Octree(
+        _build_node(root_bounds, list(object_bounds), object_bounds, max_objects, max_depth, 0)
+    )
+
+
 def build_octree(
     objects: list[dict[str, Any]],
     max_objects: int = 8,
     max_depth: int = 8,
 ) -> Octree | None:
-    """Build an octree containing every finite object in ``objects``."""
+    """
+    Build an octree containing every finite object in ``objects``.
+
+    `Mesh` Objects contribute one entry per face; leaf entries are primitive
+    indices in global traversal order (mesh faces first).
+    """
     if max_objects < 1:
         raise ValueError("max_objects must be positive.")
     if max_depth < 0:
         raise ValueError("max_depth must be non-negative.")
 
-    object_bounds = {
-        index: bounds
-        for index, obj in enumerate(objects)
-        if (bounds := object_aabb(obj)) is not None
-    }
-    bounds = root_aabb(objects)
-    if bounds is None:
+    bounds_list: list[AABB] = []
+    for obj in objects:
+        match obj["type"]:
+            case "mesh":
+                mesh: Mesh = obj["mesh"]
+                bounds_list.extend(zip(mesh.bounds_min, mesh.bounds_max))
+            case "plane":
+                continue
+            case _:
+                b = object_aabb(obj)
+                if b is not None:
+                    bounds_list.append(b)
+    if not bounds_list:
         return None
-    root = _build_node(
-        bounds,
-        list(object_bounds),
-        object_bounds,
-        max_objects,
-        max_depth,
-        0,
+
+    # Root region: the union box of all primitives (octree partitions this
+    # box, not an arbitrary world volume).
+    root_box = (
+        np.min(np.stack([b[0] for b in bounds_list]), axis=0),
+        np.max(np.stack([b[1] for b in bounds_list]), axis=0),
     )
-    return Octree(root)
+    return build_octree_from_bounds(root_box, bounds_list, max_objects, max_depth)
 
 
 def query_octree(

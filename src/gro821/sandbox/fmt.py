@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Any, Final
 
 
 class ANSI:
@@ -85,3 +85,7 @@ def pprint_bool(condition: bool, text: tuple[str, str] | None = None) -> str:
     if condition:
         return f"{ANSI.BRIGHT_GREEN}{text[0]}{ANSI.RESET}"
     return f"{ANSI.RED}{text[1]}{ANSI.RESET}"
+
+
+def color(color: str, text: Any) -> str:
+    return f"{color}{text}{ANSI.RESET}"
