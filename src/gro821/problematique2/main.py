@@ -513,10 +513,12 @@ def trace_ray(
     )
     diffuse = glob_diffuse_coeff
     ray_color += diffuse * max(np.dot(obj_normal, dir_to_light), 0) * obj_color
+    # == Blinn-Phong model (baseline)
     ray_color += (
         glob_specular_coeff
         * max(np.dot(obj_normal, normalize(dir_to_light + dir_to_origin)), 0) ** glob_specular_k
     )
+    # /== Blinn-Phong model
     reflection = (
         mesh.reflection[hit_face] if hit_face is not None else hit_obj.get("reflection", 0.5)  # pyright: ignore[reportOptionalMemberAccess]
     )
@@ -562,7 +564,7 @@ def main():
 
     load_start = perf_counter()
     vertices, faces = bunny.load(model, scale=5.0)
-    _bunny = build_mesh(vertices, faces, color=(230/255, 125/255, 246/255))
+    _bunny = build_mesh(vertices, faces, color=(230 / 255, 125 / 255, 246 / 255))
     load_end = perf_counter()
 
     # === Populate scene ===
@@ -582,7 +584,7 @@ def main():
     # == BVH precomputation (compute)
     # Build the alternative hierarchy once before rendering so its construction
     # cost is not repeated for camera or shadow rays.
-    scene_bvh = build_bvh(scene)
+    scene_bvh = build_bvh(scene, max_objects=16)
 
     # === Configure camera/viewpoint ===
     pixel_color = np.array([0, 0, 0], dtype=np.float32)
@@ -694,3 +696,7 @@ def main():
     )
     print("-" * 40)
     Image.fromarray((255 * image).astype(np.uint8), "RGB").save("out.png")
+
+
+if __name__ == "__main__":
+    main()
