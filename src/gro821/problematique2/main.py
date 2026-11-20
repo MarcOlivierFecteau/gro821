@@ -14,6 +14,7 @@ from PIL import Image
 from gro821.problematique2 import *
 from gro821.problematique2 import bunny
 from gro821.problematique2.aabb import AABB, intersect_aabb, pprint_aabb_tests, root_aabb
+from gro821.problematique2.bsp import BSP, BSPNode, build_bsp, query_bsp
 from gro821.problematique2.bvh import BVH, BVHNode, build_bvh, query_bvh
 from gro821.problematique2.mesh import Mesh, build_mesh
 from gro821.problematique2.octree import Octree, OctreeNode, build_octree, query_octree
@@ -45,7 +46,7 @@ plane_color_pair: Final = (
     np.array([0, 0, 0], dtype=np.float32),
     np.array([1, 1, 1], dtype=np.float32),
 )
-light_pos: Final = np.array([5, 5, 10], dtype=np.float32)
+light_pos = np.array([5, 5, 10], dtype=np.float32)
 light_color = np.array([1, 1, 1], dtype=np.float32)
 
 glob_ambient: Final = 0.05
@@ -61,11 +62,11 @@ HEIGHT: Final = 150
 SHADING = "flat"  # "flat" | "gouraud"
 
 # Ray rejection method
-ACCELERATION = "bvh"  # "root_aabb" | "octree" | "bvh"
+ACCELERATION = "bvh"  # "root_aabb" | "octree" | "bvh" | "bsp"
 
-CULLING: Final = True
-EARLY_EXIT: Final = True
-VECTORIZED: Final = True
+CULLING = True
+EARLY_EXIT = True
+VECTORIZED = True
 
 
 def normalize(x: Vector):
@@ -270,6 +271,7 @@ def intersect_scene(
     direction: Vector,
     octree: Octree | None = None,
     bvh: BVH | None = None,
+    bsp: BSP | None = None,
     t_max: float = np.inf,
     exclude_face: int | None = None,
 ) -> list[Hit] | list[Intersection]:
@@ -282,6 +284,8 @@ def intersect_scene(
         candidate_indices = query_octree(octree, origin, direction, t_max)
     elif ACCELERATION == "bvh":
         candidate_indices = query_bvh(bvh, origin, direction, t_max)
+    elif ACCELERATION == "bsp":
+        candidate_indices = query_bsp(bsp, origin, direction, t_max)
     elif ACCELERATION == "root_aabb":
         visible = root_bounds is None or intersect_aabb(origin, direction, root_bounds) is not None
         candidate_indices = list(range(len(mesh.faces))) if visible else []
@@ -365,6 +369,7 @@ def trace_ray(
     root_bounds: AABB | None = None,
     octree: Octree | None = None,
     bvh: BVH | None = None,
+    bsp: BSP | None = None,
 ):
     mesh = next(obj["mesh"] for obj in scene if obj["type"] == ObjectType.MESH)
 
@@ -373,7 +378,15 @@ def trace_ray(
     hit_face: int | None = None
     hit_obj: Object | None = None
 
-    for kind, payload in intersect_scene(scene, root_bounds, origin, direction, octree, bvh):
+    for kind, payload in intersect_scene(
+        scene,
+        root_bounds,
+        origin,
+        direction,
+        octree,
+        bvh,
+        bsp,
+    ):
         if kind == "mesh":
             t_hit, u_hit, v_hit, face_hit = payload  # pyright: ignore[reportAssignmentType]
         else:
@@ -433,10 +446,12 @@ def trace_ray(
             root_node = octree.root
         elif ACCELERATION == "bvh" and bvh is not None:
             root_node = bvh.root
+        elif ACCELERATION == "bsp" and bsp is not None:
+            root_node = bsp.root
         else:
             root_node = None  # sentinel
 
-        q: list[tuple[float, int, OctreeNode | BVHNode | None]] = []
+        q: list[tuple[float, int, OctreeNode | BVHNode | BSPNode | None]] = []
         seq = 0  # tie-break counter
         root_interval = (
             intersect_aabb(light, dir_from_light, root_node.bounds) if root_node else (0.0, np.inf)
@@ -492,6 +507,7 @@ def trace_ray(
             dir_from_light,
             octree,
             bvh,
+            bsp,
             t_max=t_max_shadow,
             exclude_face=hit_face,
         )
@@ -558,9 +574,35 @@ def add_mesh(mesh: Mesh) -> Object:
     return {"type": ObjectType.MESH, "mesh": mesh, "reflection": 0.5}
 
 
-def main():
+def main(
+    _model=None,
+    shades=None,
+    accel=None,
+    light=None,
+    cul=None,
+    early=None,
+    vector=None,
+    name_out=None,
+):
     root = Path(__file__).parent
     model = f"{root}/meshes/bun_zipper.ply"
+
+    # Benchmark-related code
+    if _model is not None:
+        model = _model
+    if shades is not None:
+        SHADING = shades
+    if accel is not None:
+        ACCELERATION = accel
+    if light is not None:
+        light_pos = light
+    if cul is not None:
+        CULLING = cul
+    if early is not None:
+        EARLY_EXIT = early
+    if vector is not None:
+        VECTORIZED = vector
+    # END - Benchmark-related code
 
     load_start = perf_counter()
     vertices, faces = bunny.load(model, scale=5.0)
@@ -585,6 +627,10 @@ def main():
     # Build the alternative hierarchy once before rendering so its construction
     # cost is not repeated for camera or shadow rays.
     scene_bvh = build_bvh(scene, max_objects=16)
+    # == BSP precomputation (compute)
+    # Build the alternative hierarchy once before rendering so its construction
+    # cost is not repeated for camera or shadow rays.
+    scene_bsp = build_bsp(scene, max_objects=16)
 
     # === Configure camera/viewpoint ===
     pixel_color = np.array([0, 0, 0], dtype=np.float32)
@@ -617,6 +663,7 @@ def main():
                     scene_root_aabb,
                     scene_octree,
                     scene_bvh,
+                    scene_bsp,
                 )  # pyright: ignore[reportArgumentType]
                 if traced is None:
                     break
@@ -695,7 +742,10 @@ def main():
         f"({fmt.color(ANSI.DIM, tests_per_pixel(total_intersection_test_count))})"
     )
     print("-" * 40)
-    Image.fromarray((255 * image).astype(np.uint8), "RGB").save("out.png")
+    if name_out is not None:
+        Image.fromarray((255 * image).astype(np.uint8), "RGB").save(f"{name_out}.png")
+    else:
+        Image.fromarray((255 * image).astype(np.uint8), "RGB").save("out.png")
 
 
 if __name__ == "__main__":

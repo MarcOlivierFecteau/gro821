@@ -16,11 +16,21 @@ To run the script for the first assignment:
 uv run sandbox
 ```
 
-To run the script for the second assignment:
+To run the script for the second assignment (one-time run):
 
 ```console
 uv run prob2
 ```
+
+To run the benchmark for the second assignment configuration comparisons:
+
+> WARNING: Long! Very long!
+
+```console
+uv run prob2_benchmark
+```
+
+> _N.B._ For the second assignment scripts, the output PNGs are not in `results/`, but in the root folder.
 
 ## Collision benchmark
 
