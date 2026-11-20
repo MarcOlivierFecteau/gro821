@@ -5,13 +5,13 @@ from typing import Any
 
 import numpy as np
 
-from gro821.problematique2.aabb import AABB, intersect_aabb, object_aabb
+from gro821.problematique2.aabb import AABB, MeshFace, intersect_aabb, mesh_object_aabbs
 
 
 @dataclass(slots=True)
 class BVHNode:
     bounds: AABB
-    object_indices: list[int]
+    object_indices: list[MeshFace]
     children: tuple[BVHNode, BVHNode] | None = None
 
 
@@ -28,8 +28,8 @@ def _merge_bounds(bounds: list[AABB]) -> AABB:
 
 
 def _build_node(
-    object_indices: list[int],
-    object_bounds: dict[int, AABB],
+    object_indices: list[MeshFace],
+    object_bounds: dict[MeshFace, AABB],
     max_objects: int,
     max_depth: int,
     depth: int,
@@ -54,13 +54,12 @@ def _build_node(
 
 
 def build_bvh_from_bounds(
-    bounds_list: list[AABB],
+    bounds_list: dict[MeshFace, AABB],
     max_objects: int = 4,
     max_depth: int = 32,
 ) -> BVH:
     """Build a median-split BVH over a list of AABBs (one per primitive)."""
-    object_bounds = dict(enumerate(bounds_list))
-    return BVH(_build_node(list(object_bounds), object_bounds, max_objects, max_depth, 0))
+    return BVH(_build_node(list(bounds_list), bounds_list, max_objects, max_depth, 0))
 
 
 def build_bvh(
@@ -69,7 +68,7 @@ def build_bvh(
     max_depth: int = 32,
 ) -> BVH | None:
     """
-    Build a median-split BVH containing every finite object.
+    Build a median-split BVH over mesh faces.
 
     `Mesh` objects contribute one leaf entry per face.
     """
@@ -78,18 +77,15 @@ def build_bvh(
     if max_depth < 0:
         raise ValueError("max_depth must be non-negative.")
 
-    bounds_list: list[AABB] = []
-    for obj in objects:
+    bounds_list: dict[MeshFace, AABB] = {}
+    for mesh_index, obj in enumerate(objects):
         match obj["type"]:
             case "mesh":
-                mesh = obj["mesh"]
-                bounds_list.extend(zip(mesh.bounds_min, mesh.bounds_max))
-            case "plane":
-                continue
+                bounds_list.update(mesh_object_aabbs(obj, mesh_index))
             case _:
-                b = object_aabb(obj)
-                if b is not None:
-                    bounds_list.append(b)
+                # Non-mesh objects are intersected directly by
+                # intersect_scene and must not become mesh face indices.
+                continue
     if not bounds_list:
         return None
     return build_bvh_from_bounds(bounds_list, max_objects, max_depth)
@@ -107,7 +103,7 @@ def query_bvh(
     if intersect_aabb(origin, direction, tree.root.bounds) is None:
         return []
 
-    object_indices: list[int] = []
+    object_indices: list[MeshFace] = []
     nodes = [tree.root]
     while nodes:
         node = nodes.pop()

@@ -5,14 +5,13 @@ from typing import Any
 
 import numpy as np
 
-from gro821.problematique2.aabb import AABB, intersect_aabb, object_aabb
-from gro821.problematique2.mesh import Mesh
+from gro821.problematique2.aabb import AABB, MeshFace, intersect_aabb, mesh_object_aabbs
 
 
 @dataclass(slots=True)
 class OctreeNode:
     bounds: AABB
-    object_indices: list[int]
+    object_indices: list[MeshFace]
     children: list[OctreeNode]
 
 
@@ -43,8 +42,8 @@ def _child_bounds(bounds: AABB) -> list[AABB]:
 
 def _build_node(
     bounds: AABB,
-    object_indices: list[int],
-    object_bounds: dict[int, AABB],
+    object_indices: list[MeshFace],
+    object_bounds: dict[MeshFace, AABB],
     max_objects: int,
     max_depth: int,
     depth: int,
@@ -93,7 +92,7 @@ def _build_node(
 
 def build_octree_from_bounds(
     root_bounds: AABB,
-    bounds_list: list[AABB],
+    bounds_list: dict[MeshFace, AABB],
     max_objects: int = 8,
     max_depth: int = 8,
 ) -> Octree:
@@ -102,9 +101,8 @@ def build_octree_from_bounds(
         raise ValueError("max_objects must be positive.")
     if max_depth < 0:
         raise ValueError("max_depth must be non-negative.")
-    object_bounds = dict(enumerate(bounds_list))
     return Octree(
-        _build_node(root_bounds, list(object_bounds), object_bounds, max_objects, max_depth, 0)
+        _build_node(root_bounds, list(bounds_list), bounds_list, max_objects, max_depth, 0)
     )
 
 
@@ -114,36 +112,33 @@ def build_octree(
     max_depth: int = 8,
 ) -> Octree | None:
     """
-    Build an octree containing every finite object in ``objects``.
+    Build an octree over mesh faces.
 
-    `Mesh` Objects contribute one entry per face; leaf entries are primitive
-    indices in global traversal order (mesh faces first).
+    `Mesh` objects contribute one entry per face; leaf entries are mesh face
+    indices.
     """
     if max_objects < 1:
         raise ValueError("max_objects must be positive.")
     if max_depth < 0:
         raise ValueError("max_depth must be non-negative.")
 
-    bounds_list: list[AABB] = []
-    for obj in objects:
+    bounds_list: dict[MeshFace, AABB] = {}
+    for mesh_index, obj in enumerate(objects):
         match obj["type"]:
             case "mesh":
-                mesh: Mesh = obj["mesh"]
-                bounds_list.extend(zip(mesh.bounds_min, mesh.bounds_max))
-            case "plane":
-                continue
+                bounds_list.update(mesh_object_aabbs(obj, mesh_index))
             case _:
-                b = object_aabb(obj)
-                if b is not None:
-                    bounds_list.append(b)
+                # Non-mesh objects are intersected directly by
+                # intersect_scene and must not become mesh face indices.
+                continue
     if not bounds_list:
         return None
 
     # Root region: the union box of all primitives (octree partitions this
     # box, not an arbitrary world volume).
     root_box = (
-        np.min(np.stack([b[0] for b in bounds_list]), axis=0),
-        np.max(np.stack([b[1] for b in bounds_list]), axis=0),
+        np.min(np.stack([b[0] for b in bounds_list.values()]), axis=0),
+        np.max(np.stack([b[1] for b in bounds_list.values()]), axis=0),
     )
     return build_octree_from_bounds(root_box, bounds_list, max_objects, max_depth)
 
@@ -160,7 +155,7 @@ def query_octree(
     if intersect_aabb(origin, direction, tree.root.bounds) is None:
         return []
 
-    object_indices: list[int] = []
+    object_indices: list[MeshFace] = []
     nodes = [tree.root]
     while nodes:
         node = nodes.pop()

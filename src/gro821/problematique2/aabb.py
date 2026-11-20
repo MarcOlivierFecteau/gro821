@@ -10,6 +10,22 @@ from gro821.sandbox import fmt
 from gro821.sandbox.fmt import ANSI
 
 type AABB = tuple[np.ndarray, np.ndarray]
+type MeshFace = tuple[int, int]
+
+
+def transform_aabb(bounds: AABB, transform: np.ndarray) -> AABB:
+    minimum, maximum = bounds
+    corners = np.array(
+        [
+            [x, y, z, 1.0]
+            for x in (minimum[0], maximum[0])
+            for y in (minimum[1], maximum[1])
+            for z in (minimum[2], maximum[2])
+        ],
+        dtype=np.float32,
+    )
+    transformed = (transform @ corners.T).T[:, :3]
+    return transformed.min(axis=0), transformed.max(axis=0)
 
 
 def object_aabb(obj: dict[str, Any]) -> AABB | None:
@@ -27,7 +43,7 @@ def object_aabb(obj: dict[str, Any]) -> AABB | None:
         case "plane":
             return None
         case "mesh":
-            return mesh_object_aabbs(obj["mesh"])
+            return transform_aabb(mesh_aabb(obj["mesh"]), obj["transform"])
         case _:
             raise ValueError(f"Unsupported object type: {obj['type']}.")
 
@@ -37,9 +53,16 @@ def mesh_aabb(mesh: Mesh) -> AABB:
     return mesh.bounds_min.min(axis=0), mesh.bounds_max.max(axis=0)
 
 
-def mesh_object_aabbs(mesh: Mesh) -> AABB:
-    """Per-face AABB bounds, (M, 3) each."""
-    return mesh.bounds_min, mesh.bounds_max
+def mesh_object_aabbs(obj: dict[str, Any], mesh_index: int) -> dict[MeshFace, AABB]:
+    """Return world-space AABBs indexed by mesh instance and face."""
+    mesh: Mesh = obj["mesh"]
+    transform = obj["transform"]
+    return {
+        (mesh_index, face_index): transform_aabb(
+            (mesh.bounds_min[face_index], mesh.bounds_max[face_index]), transform
+        )
+        for face_index in range(len(mesh.faces))
+    }
 
 
 def root_aabb(objects: list[dict[str, Any]]) -> AABB | None:
